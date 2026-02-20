@@ -5,6 +5,21 @@
 - Date: 2026-02-20
 - Linked spec: `specs/wifinder-product-spec.md`
 
+## Current Execution Tracker
+- 2026-02-20 finding: repository has no `src/*` implementation files yet, so all milestones are currently unimplemented.
+- 2026-02-20 resolved: Milestone 0 stack/moderation decisions are now captured in ADRs (`docs/adr/0001-stack.md`, `docs/adr/0002-no-auth-identity-and-moderation.md`) plus environment/secrets baseline (`docs/environments.md`).
+- 2026-02-20 resolved: Milestone 1 thin slice implemented in `src/*` with API scaffolding, validation, anonymous device-token issuance/rotation, IP+token rate limiting, cooldown checks, and request-level auditing.
+- 2026-02-20 resolved: Integration tests for create/read paths and vote mutation behavior now pass via `npm test` (`test/api.integration.test.js`).
+- Remaining Milestone 1 gap: persistence layer is currently in-memory only (no durable DB schema/migrations yet), so production durability is not satisfied.
+
+## Increment Notes (2026-02-20)
+- Why this implementation matters:
+  - It establishes a single API contract aligned to the product spec so future UI work can integrate immediately.
+  - It derisks no-auth abuse controls early (token hashing, rate limits, cooldowns, audit events), which is critical for public write paths.
+- Why these tests matter:
+  - They verify core user-critical flows end-to-end: health availability, location contribution/read-back, and one-active-vote-per-token behavior.
+  - They protect against regressions in the confidence/freshness signal inputs by validating vote update semantics.
+
 ## 1. Delivery Strategy
 Ship thin vertical slices in this order:
 1. Discovery first (map + nearby + search).

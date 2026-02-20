@@ -1,0 +1,14 @@
+{
+  "name": "wifinder",
+  "version": "0.0.1",
+  "description": "WiFinder MVP API",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
