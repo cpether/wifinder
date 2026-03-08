@@ -8,4 +8,5 @@
 - Persistence uses the bundled `better-sqlite3` dependency; the app no longer requires the system `sqlite3` CLI.
 - Load demo seed data explicitly with `pnpm db:seed` (or `DB_PATH=... pnpm db:seed` for an isolated database).
 - Run test suite: `pnpm test`
+- Run a focused integration file while iterating on web/API slices: `pnpm test -- test/api.integration.test.js`
 - Integration tests start a local HTTP server and require an environment that permits localhost port binding.

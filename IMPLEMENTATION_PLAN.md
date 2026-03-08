@@ -24,6 +24,8 @@
 - 2026-03-09: The next unblocked item in delivery order is Milestone 3 UI filters for category, radius, and recently verified state, which can now build on the shared search shell.
 - 2026-03-08: Tooling migration note: the repository now standardizes on `pnpm` with a committed `pnpm-lock.yaml` and `packageManager` field so future install/test loops use one package manager consistently.
 - 2026-03-08: The pnpm migration also whitelists `better-sqlite3` as an allowed native build so installs remain non-interactive and the SQLite-backed test suite still runs.
+- 2026-03-08: Milestone 3 search bar work is now in place; the browser shell can issue debounced `/api/locations/search` requests, keep nearby mode when the query is empty, and support query-only search before a center is chosen.
+- 2026-03-08: The next unblocked Milestone 3 item is UI filter controls for category, radius, and recently verified state, followed by URL persistence for search/filter state.
 
 ## Increment Notes (2026-02-20)
 - Why this implementation matters:
@@ -49,13 +51,13 @@
   - Shell-route coverage protects the new HTML/CSS/JS entrypoint from accidental regressions in server routing or asset serving.
   - Nearby summary assertions lock in the `last_verified_at` metadata that the location cards need, preventing future API changes from silently breaking the client.
 
-## Increment Notes (2026-03-09, Milestone 3 Search)
+## Increment Notes (2026-03-08, Milestone 3 Search)
 - Why this implementation matters:
-  - The mobile shell now exposes the existing search capability to users, so venue discovery is no longer limited to raw geolocation lookups.
-  - Debounced client requests keep the UI responsive while avoiding wasteful duplicate API calls as users refine place, street, postcode, or area queries.
+  - Debounced search turns the existing API-only search capability into an actual user-facing discovery path, which is the first missing slice in Milestone 3.
+  - Query-only search keeps the landing experience useful before geolocation succeeds, while preserving distance-biased results whenever a nearby center is available.
 - Why these tests matter:
-  - Web-shell assertions lock in the new search bootstrap wiring so future frontend iterations do not silently drop the search surface.
-  - The client-side debounce test protects the exact behavior this increment adds: only the final paused query is sent, and it keeps the current map center when searching around a chosen area.
+  - Web-shell assertions protect the new search bootstrap wiring and input markup so future routing changes do not silently drop the feature.
+  - Query-only search coverage locks in the API behavior the search bar depends on when users type before selecting a location.
 
 ## 1. Delivery Strategy
 Ship thin vertical slices in this order:

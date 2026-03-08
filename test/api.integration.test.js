@@ -100,19 +100,24 @@ test("web shell route serves the mobile map/list app and static assets", async (
     assert.match(home.body, /Use my location/);
     assert.match(home.body, /Browse by map or list/);
     assert.match(home.body, /Search by place, street, postcode, or area/);
+    assert.match(home.body, /id="search-input"/);
+    assert.match(home.body, /id="category-input"/);
+    assert.match(home.body, /id="radius-select"/);
+    assert.match(home.body, /id="verified-only"/);
     assert.match(home.body, /"nearbyEndpoint":"\/api\/locations\/nearby"/);
     assert.match(home.body, /"searchEndpoint":"\/api\/locations\/search"/);
+    assert.match(home.body, /"radiusOptions":\[500,1000,2000,5000,10000\]/);
     assert.match(home.body, /"googleMapsApiKey":null/);
 
     const css = await request("/assets/app.css", { raw: true });
     assert.equal(css.status, 200);
     assert.match(css.contentType, /^text\/css/);
-    assert.match(css.body, /\.tab-button/);
+    assert.match(css.body, /\.filter-grid/);
 
     const js = await request("/assets/app.js", { raw: true });
     assert.equal(js.status, 200);
     assert.match(js.contentType, /^application\/javascript/);
-    assert.match(js.body, /SEARCH_DEBOUNCE_MS/);
+    assert.match(js.body, /scheduleTypedSearch/);
   });
 });
 
@@ -185,6 +190,119 @@ test("create/read location flow supports nearby and search", async () => {
     assert.equal(location.body.location.name, "Shoreditch Cowork");
     assert.ok(Array.isArray(location.body.location.wifi_details));
     assert.equal(location.body.location.wifi_details.length, 0);
+  });
+});
+
+test("search supports query-only requests before a nearby center is chosen", async () => {
+  await withServer(async ({ request }) => {
+    const alphaResponse = await request("/api/locations", {
+      method: "POST",
+      body: {
+        name: "Camden Laptop Club",
+        category: "coworking",
+        lat: 51.5416,
+        lng: -0.142,
+        address: "Camden High Street, London"
+      }
+    });
+    assert.equal(alphaResponse.status, 201);
+
+    const betaResponse = await request("/api/locations", {
+      method: "POST",
+      body: {
+        name: "Brixton Beans",
+        category: "cafe",
+        lat: 51.4613,
+        lng: -0.1156,
+        address: "Atlantic Road, London"
+      }
+    });
+    assert.equal(betaResponse.status, 201);
+
+    const search = await request("/api/locations/search?q=camden");
+    assert.equal(search.status, 200);
+    assert.equal(search.body.locations.length, 1);
+    assert.equal(search.body.locations[0].name, "Camden Laptop Club");
+    assert.equal(search.body.locations[0].distance_m, null);
+    assert.equal(search.body.locations[0].address, "Camden High Street, London");
+  });
+});
+
+test("search and nearby filters apply category, radius, and verified state", async () => {
+  await withServer(async ({ request }) => {
+    const verifiedCafe = await request("/api/locations", {
+      method: "POST",
+      body: {
+        name: "Filter Verified Cafe",
+        category: "cafe",
+        lat: 51.5008,
+        lng: -0.1257,
+        address: "Victoria Embankment, London"
+      }
+    });
+    assert.equal(verifiedCafe.status, 201);
+
+    const verifiedWifi = await request(`/api/locations/${verifiedCafe.body.location.id}/wifi-details`, {
+      method: "POST",
+      body: {
+        ssid: "VerifiedCafeGuest"
+      }
+    });
+    assert.equal(verifiedWifi.status, 201);
+
+    const vote = await request(`/api/wifi-details/${verifiedWifi.body.wifi_detail.id}/votes`, {
+      method: "POST",
+      body: { vote_type: "works" }
+    });
+    assert.equal(vote.status, 200);
+
+    const staleCafe = await request("/api/locations", {
+      method: "POST",
+      body: {
+        name: "Filter Stale Cafe",
+        category: "cafe",
+        lat: 51.5012,
+        lng: -0.1261,
+        address: "Northumberland Avenue, London"
+      }
+    });
+    assert.equal(staleCafe.status, 201);
+
+    const staleWifi = await request(`/api/locations/${staleCafe.body.location.id}/wifi-details`, {
+      method: "POST",
+      body: {
+        ssid: "StaleCafeGuest"
+      }
+    });
+    assert.equal(staleWifi.status, 201);
+
+    const library = await request("/api/locations", {
+      method: "POST",
+      body: {
+        name: "Filter Library",
+        category: "library",
+        lat: 51.5071,
+        lng: -0.1279,
+        address: "Trafalgar Square, London"
+      }
+    });
+    assert.equal(library.status, 201);
+
+    const nearby = await request("/api/locations/nearby?lat=51.5008&lng=-0.1257&radius=500&category=CaFe");
+    assert.equal(nearby.status, 200);
+    assert.deepEqual(
+      nearby.body.locations.map((location) => location.name),
+      ["Filter Verified Cafe", "Filter Stale Cafe"]
+    );
+
+    const filteredSearch = await request(
+      "/api/locations/search?lat=51.5008&lng=-0.1257&radius=600&category=CAFE&verified=true"
+    );
+    assert.equal(filteredSearch.status, 200);
+    assert.deepEqual(
+      filteredSearch.body.locations.map((location) => location.name),
+      ["Filter Verified Cafe"]
+    );
   });
 });
 

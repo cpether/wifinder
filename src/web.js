@@ -3,6 +3,8 @@ import { send } from "./http.js";
 
 const APP_JS = fs.readFileSync(new URL("./web/app.js", import.meta.url), "utf8");
 const APP_CSS = fs.readFileSync(new URL("./web/app.css", import.meta.url), "utf8");
+const DEFAULT_RADIUS = 2000;
+const RADIUS_OPTIONS = [500, 1000, 2000, 5000, 10000];
 
 function escapeHtml(value) {
   return String(value)
@@ -21,7 +23,9 @@ function renderAppHtml(config) {
     googleMapsApiKey: config.googleMapsApiKey,
     nearbyEndpoint: "/api/locations/nearby",
     searchEndpoint: "/api/locations/search",
-    defaultRadius: 2000,
+    searchDebounceMs: 300,
+    defaultRadius: DEFAULT_RADIUS,
+    radiusOptions: RADIUS_OPTIONS,
     fallbackCenter: {
       lat: 51.5072,
       lng: -0.1276,
@@ -77,19 +81,52 @@ function renderAppHtml(config) {
           </div>
         </div>
 
-        <div class="search-shell" role="search" aria-labelledby="search-label">
-          <label class="search-label" id="search-label" for="search-input">Search by place, street, postcode, or area</label>
-          <input
-            class="search-input"
-            id="search-input"
-            name="q"
-            type="search"
-            placeholder="Shoreditch, EC1, library, cafe"
-            autocomplete="off"
-            spellcheck="false"
-          >
-          <p class="search-note">Results update automatically when you pause typing.</p>
-        </div>
+        <section class="search-shell" aria-labelledby="search-heading">
+          <div>
+            <p class="section-label">Search</p>
+            <h3 id="search-heading">Search by place, street, postcode, or area</h3>
+          </div>
+          <label class="search-label" for="search-input">
+            Search venues
+            <input
+              class="search-input"
+              id="search-input"
+              type="search"
+              inputmode="search"
+              autocomplete="off"
+              placeholder="Try Soho, Shoreditch, cafe, or a venue name"
+            >
+          </label>
+          <div class="filter-grid" aria-label="Search filters">
+            <label class="search-label" for="category-input">
+              Category
+              <input
+                class="search-input search-input-compact"
+                id="category-input"
+                type="search"
+                inputmode="search"
+                autocomplete="off"
+                placeholder="cafe, coworking, library"
+              >
+            </label>
+            <label class="search-label" for="radius-select">
+              Radius
+              <select class="search-select" id="radius-select">
+                ${RADIUS_OPTIONS.map(
+                  (radius) =>
+                    `<option value="${radius}">${radius < 1000 ? `${radius} m` : `${radius / 1000} km`}</option>`
+                ).join("")}
+              </select>
+            </label>
+            <label class="toggle-label" for="verified-only">
+              <input id="verified-only" type="checkbox">
+              <span>Recently verified only</span>
+            </label>
+          </div>
+          <p class="search-note">
+            Search works across the full dataset. Pick a location first to keep results anchored to your area, then share the URL to reopen the same search filters.
+          </p>
+        </section>
 
         <div class="status-banner" id="status-banner" aria-live="polite">Choose a location to load nearby venues.</div>
 

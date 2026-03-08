@@ -5,7 +5,35 @@
   }
 
   const config = JSON.parse(bootstrapElement.textContent);
-  const SEARCH_DEBOUNCE_MS = 300;
+  const radiusOptions = Array.isArray(config.radiusOptions) && config.radiusOptions.length > 0
+    ? config.radiusOptions
+    : [config.defaultRadius];
+
+  function normalizeRadius(value) {
+    const parsed = Number(value);
+    if (radiusOptions.includes(parsed)) {
+      return parsed;
+    }
+    return config.defaultRadius;
+  }
+
+  function readInitialState() {
+    const params = new URLSearchParams(window.location.search);
+    const lat = Number(params.get("lat"));
+    const lng = Number(params.get("lng"));
+    const hasCenter = Number.isFinite(lat) && Number.isFinite(lng);
+
+    return {
+      center: hasCenter ? { lat, lng } : null,
+      centerLabel: hasCenter ? params.get("label") || "saved search area" : null,
+      centerSource: hasCenter ? "deeplink" : null,
+      searchQuery: params.get("q") || "",
+      category: params.get("category") || "",
+      radius: normalizeRadius(params.get("radius")),
+      verifiedOnly: params.get("verified") === "true"
+    };
+  }
+
   const elements = {
     useLocation: document.getElementById("use-location"),
     useFallback: document.getElementById("use-fallback"),
@@ -13,6 +41,9 @@
     manualLat: document.getElementById("manual-lat"),
     manualLng: document.getElementById("manual-lng"),
     searchInput: document.getElementById("search-input"),
+    categoryInput: document.getElementById("category-input"),
+    radiusSelect: document.getElementById("radius-select"),
+    verifiedOnly: document.getElementById("verified-only"),
     statusBanner: document.getElementById("status-banner"),
     resultsSummary: document.getElementById("results-summary"),
     list: document.getElementById("location-list"),
@@ -25,16 +56,22 @@
     }
   };
 
+  const initialState = readInitialState();
   const state = {
     activeTab: "list",
     loading: false,
     permissionState: "idle",
-    center: null,
-    centerLabel: null,
-    query: "",
+    center: initialState.center,
+    centerLabel: initialState.centerLabel,
+    centerSource: initialState.centerSource,
     locations: [],
     error: null,
-    requestSequence: 0
+    searchQuery: initialState.searchQuery,
+    filters: {
+      category: initialState.category,
+      radius: initialState.radius,
+      verifiedOnly: initialState.verifiedOnly
+    }
   };
 
   let mapPromise = null;
@@ -42,7 +79,24 @@
   let userMarker = null;
   let markers = [];
   let infoWindow = null;
-  let searchTimerId = null;
+  let searchTimer = null;
+  let requestSequence = 0;
+
+  function normalizeSearchQuery() {
+    return state.searchQuery.trim();
+  }
+
+  function normalizeCategory() {
+    return state.filters.category.trim();
+  }
+
+  function hasTypedSearch() {
+    return normalizeSearchQuery().length > 0 || normalizeCategory().length > 0;
+  }
+
+  function hasSearchCriteria() {
+    return hasTypedSearch() || state.filters.verifiedOnly;
+  }
 
   function formatDistance(distanceMeters) {
     if (typeof distanceMeters !== "number") {
@@ -54,6 +108,15 @@
     }
 
     return `${(distanceMeters / 1000).toFixed(1)} km away`;
+  }
+
+  function formatRadius(radiusMeters) {
+    if (radiusMeters < 1000) {
+      return `${radiusMeters} m`;
+    }
+
+    const radiusKm = radiusMeters / 1000;
+    return Number.isInteger(radiusKm) ? `${radiusKm} km` : `${radiusKm.toFixed(1)} km`;
   }
 
   function formatLastVerified(value) {
@@ -76,19 +139,54 @@
       .replaceAll('"', "&quot;");
   }
 
-  function getActiveQuery() {
-    return state.query.trim();
-  }
+  function applyStateToControls() {
+    elements.searchInput.value = state.searchQuery;
+    elements.categoryInput.value = state.filters.category;
+    elements.radiusSelect.value = String(state.filters.radius);
+    elements.verifiedOnly.checked = state.filters.verifiedOnly;
 
-  function hasActiveSearch() {
-    return getActiveQuery().length > 0;
-  }
-
-  function clearScheduledSearch() {
-    if (searchTimerId !== null) {
-      clearTimeout(searchTimerId);
-      searchTimerId = null;
+    if (state.center && state.centerSource === "deeplink") {
+      elements.manualLat.value = String(state.center.lat);
+      elements.manualLng.value = String(state.center.lng);
     }
+  }
+
+  function syncUrl() {
+    if (!window.history || typeof window.history.replaceState !== "function") {
+      return;
+    }
+
+    const params = new URLSearchParams();
+    const searchQuery = normalizeSearchQuery();
+    const category = normalizeCategory();
+
+    if (searchQuery) {
+      params.set("q", searchQuery);
+    }
+
+    if (category) {
+      params.set("category", category);
+    }
+
+    if (state.filters.radius !== config.defaultRadius) {
+      params.set("radius", String(state.filters.radius));
+    }
+
+    if (state.filters.verifiedOnly) {
+      params.set("verified", "true");
+    }
+
+    if (state.center && state.centerSource !== "geolocation") {
+      params.set("lat", String(state.center.lat));
+      params.set("lng", String(state.center.lng));
+      if (state.centerLabel) {
+        params.set("label", state.centerLabel);
+      }
+    }
+
+    const nextSearch = params.toString();
+    const nextUrl = nextSearch ? `${window.location.pathname}?${nextSearch}` : window.location.pathname;
+    window.history.replaceState(null, "", nextUrl);
   }
 
   function setActiveTab(tabName) {
@@ -112,13 +210,17 @@
   }
 
   function renderStatus() {
-    const activeQuery = getActiveQuery();
-    const searchActive = activeQuery.length > 0;
+    const searchQuery = normalizeSearchQuery();
+    const mode = getRequestMode();
 
     if (state.loading) {
-      elements.statusBanner.textContent = searchActive
-        ? `Searching for "${activeQuery}"...`
-        : "Loading nearby venues...";
+      if (mode === "search") {
+        elements.statusBanner.textContent = searchQuery
+          ? `Searching for "${searchQuery}"${state.centerLabel ? ` near ${state.centerLabel}` : ""}...`
+          : "Applying the current search filters...";
+      } else {
+        elements.statusBanner.textContent = "Loading nearby venues...";
+      }
       return;
     }
 
@@ -127,60 +229,65 @@
       return;
     }
 
-    if (!state.center && !searchActive) {
-      elements.statusBanner.textContent = "Choose a location to load nearby venues.";
+    if (mode === "search") {
+      if (state.locations.length === 0) {
+        elements.statusBanner.textContent = searchQuery
+          ? `No venues matched "${searchQuery}"${state.centerLabel ? ` near ${state.centerLabel}` : ""}.`
+          : "No venues matched the current filters.";
+        return;
+      }
+
+      elements.statusBanner.textContent = searchQuery
+        ? `Showing ${state.locations.length} result${state.locations.length === 1 ? "" : "s"} for "${searchQuery}"${state.centerLabel ? ` near ${state.centerLabel}` : ""}.`
+        : `Showing ${state.locations.length} filtered venue${state.locations.length === 1 ? "" : "s"}.`;
+      return;
+    }
+
+    if (!state.center) {
+      elements.statusBanner.textContent = "Choose a location to load nearby venues, or start typing to search the full dataset.";
       return;
     }
 
     if (state.locations.length === 0) {
-      elements.statusBanner.textContent = searchActive
-        ? state.centerLabel
-          ? `No venues matched "${activeQuery}" around ${state.centerLabel}.`
-          : `No venues matched "${activeQuery}".`
-        : `No venues found within ${config.defaultRadius / 1000} km of ${state.centerLabel}.`;
+      elements.statusBanner.textContent = `No venues found within ${formatRadius(state.filters.radius)} of ${state.centerLabel}.`;
       return;
     }
 
-    elements.statusBanner.textContent = searchActive
-      ? state.centerLabel
-        ? `Showing ${state.locations.length} search result${state.locations.length === 1 ? "" : "s"} around ${state.centerLabel}.`
-        : `Showing ${state.locations.length} search result${state.locations.length === 1 ? "" : "s"}.`
-      : `Showing ${state.locations.length} nearby venue${state.locations.length === 1 ? "" : "s"} around ${state.centerLabel}.`;
+    elements.statusBanner.textContent = `Showing ${state.locations.length} nearby venue${state.locations.length === 1 ? "" : "s"} around ${state.centerLabel}.`;
   }
 
   function renderList() {
-    const activeQuery = getActiveQuery();
-    const searchActive = activeQuery.length > 0;
+    const searchQuery = normalizeSearchQuery();
+    const mode = getRequestMode();
 
-    if (!state.center && !searchActive && !state.loading) {
+    if (!state.center && !hasSearchCriteria() && !state.loading) {
       elements.resultsSummary.textContent = "No search run yet.";
-      elements.list.innerHTML = `<article class="empty-state">Use your location, Central London, or manual coordinates to start nearby discovery.</article>`;
+      elements.list.innerHTML =
+        '<article class="empty-state">Use your location, Central London, manual coordinates, or the search bar to start discovery.</article>';
       return;
     }
 
     if (state.loading) {
-      elements.resultsSummary.textContent = searchActive
-        ? `Searching for "${activeQuery}"...`
-        : "Searching nearby venues...";
-      elements.list.innerHTML = searchActive
-        ? `<article class="empty-state">Checking matching venues from the API.</article>`
-        : `<article class="empty-state">Fetching the latest nearby results from the API.</article>`;
+      elements.resultsSummary.textContent = mode === "search" ? "Searching venues..." : "Searching nearby venues...";
+      elements.list.innerHTML =
+        '<article class="empty-state">Fetching the latest venue results from the API.</article>';
       return;
     }
 
     if (state.locations.length === 0) {
-      elements.resultsSummary.textContent = searchActive ? "No search results found." : "No nearby venues found.";
-      elements.list.innerHTML = searchActive
-        ? `<article class="empty-state">Try another place name, street, postcode, or area.</article>`
-        : `<article class="empty-state">Try another area or widen the search in a future increment.</article>`;
+      elements.resultsSummary.textContent = mode === "search" ? "No search results found." : "No nearby venues found.";
+      elements.list.innerHTML = mode === "search"
+        ? `<article class="empty-state">${searchQuery ? `Try a broader search for "${escapeHtml(searchQuery)}".` : "Try relaxing a filter or widening the radius."}</article>`
+        : '<article class="empty-state">Try another area or widen the search radius.</article>';
       return;
     }
 
-    elements.resultsSummary.textContent = searchActive
-      ? state.centerLabel
-        ? `${state.locations.length} search result${state.locations.length === 1 ? "" : "s"} around ${state.centerLabel}.`
-        : `${state.locations.length} search result${state.locations.length === 1 ? "" : "s"}.`
-      : `${state.locations.length} venue${state.locations.length === 1 ? "" : "s"} within ${config.defaultRadius / 1000} km.`;
+    elements.resultsSummary.textContent = mode === "search"
+      ? searchQuery
+        ? `${state.locations.length} result${state.locations.length === 1 ? "" : "s"} for "${searchQuery}".`
+        : `${state.locations.length} filtered venue${state.locations.length === 1 ? "" : "s"}.`
+      : `${state.locations.length} venue${state.locations.length === 1 ? "" : "s"} within ${formatRadius(state.filters.radius)}.`;
+
     elements.list.innerHTML = state.locations
       .map(
         (location) => `<article class="location-card">
@@ -327,6 +434,9 @@
   }
 
   function syncMap() {
+    const searchQuery = normalizeSearchQuery();
+    const mode = getRequestMode();
+
     if (state.activeTab !== "map") {
       return;
     }
@@ -353,14 +463,14 @@
         updateMapMarkers();
         fitMapBounds();
 
-        if (state.locations.length === 0 && !state.center) {
-          renderMapMessage(
-            hasActiveSearch()
-              ? "No venue pins matched this search yet."
-              : "Use your location or the fallback center to place nearby venue pins."
-          );
+        if (state.locations.length === 0 && !state.center && !hasSearchCriteria()) {
+          renderMapMessage("Use your location, the fallback center, or the search bar to place venue pins.");
         } else if (state.locations.length === 0) {
-          renderMapMessage(hasActiveSearch() ? "No search result pins yet for this area." : "No nearby venue pins yet for this area.");
+          renderMapMessage(
+            mode === "search" && searchQuery
+              ? `No map pins matched "${searchQuery}".`
+              : "No venue pins matched the current filters."
+          );
         } else {
           elements.mapOverlay.hidden = true;
         }
@@ -370,66 +480,84 @@
       });
   }
 
-  async function fetchLocations({ center = state.center, label = state.centerLabel, query = state.query } = {}) {
-    const normalizedQuery = String(query ?? "").trim();
+  function getRequestMode() {
+    return hasSearchCriteria() ? "search" : "nearby";
+  }
 
-    if (!center && normalizedQuery.length === 0) {
-      state.center = null;
-      state.centerLabel = null;
-      state.query = "";
-      state.locations = [];
-      state.error = null;
+  async function fetchLocations(
+    center = state.center,
+    label = state.centerLabel,
+    centerSource = state.centerSource
+  ) {
+    const searchQuery = normalizeSearchQuery();
+    const category = normalizeCategory();
+    const mode = getRequestMode();
+
+    if (mode === "nearby" && !center) {
       state.loading = false;
+      state.error = null;
+      state.locations = [];
+      syncUrl();
       renderStatus();
       renderList();
       syncMap();
       return;
     }
 
-    const requestId = state.requestSequence + 1;
-    state.requestSequence = requestId;
+    const requestId = ++requestSequence;
     state.loading = true;
     state.error = null;
     state.center = center;
     state.centerLabel = label;
-    state.query = normalizedQuery;
+    state.centerSource = centerSource;
+    syncUrl();
     renderStatus();
     renderList();
     syncMap();
 
     try {
       const params = new URLSearchParams();
-      if (normalizedQuery) {
-        params.set("q", normalizedQuery);
+      const endpoint = mode === "search" ? config.searchEndpoint : config.nearbyEndpoint;
+
+      if (mode === "search" && searchQuery) {
+        params.set("q", searchQuery);
       }
+
+      if (category) {
+        params.set("category", category);
+      }
+
       if (center) {
         params.set("lat", String(center.lat));
         params.set("lng", String(center.lng));
-        params.set("radius", String(config.defaultRadius));
+        params.set("radius", String(state.filters.radius));
       }
 
-      const endpoint = normalizedQuery ? config.searchEndpoint : config.nearbyEndpoint;
+      if (mode === "search" && state.filters.verifiedOnly) {
+        params.set("verified", "true");
+      }
+
       const response = await fetch(`${endpoint}?${params.toString()}`);
       const payload = await response.json();
 
-      if (!response.ok) {
-        throw new Error(payload.error?.message || "Nearby lookup failed.");
+      if (requestId !== requestSequence) {
+        return;
       }
 
-      if (requestId !== state.requestSequence) {
-        return;
+      if (!response.ok) {
+        throw new Error(payload.error?.message || "Venue lookup failed.");
       }
 
       state.locations = Array.isArray(payload.locations) ? payload.locations : [];
     } catch (error) {
-      if (requestId !== state.requestSequence) {
+      if (requestId !== requestSequence) {
         return;
       }
 
       state.locations = [];
       state.error = error.message;
     } finally {
-      if (requestId !== state.requestSequence) {
+      if (requestId !== requestSequence) {
         return;
       }
 
@@ -438,32 +566,6 @@
       renderList();
       syncMap();
     }
-  }
-
-  function fetchNearby(center, label) {
-    clearScheduledSearch();
-    return fetchLocations({ center, label });
-  }
-
-  function scheduleSearch() {
-    clearScheduledSearch();
-    state.query = elements.searchInput.value;
-
-    if (!state.center && !hasActiveSearch()) {
-      renderStatus();
-      renderList();
-      syncMap();
-      return;
-    }
-
-    searchTimerId = setTimeout(() => {
-      searchTimerId = null;
-      fetchLocations({
-        center: state.center,
-        label: state.centerLabel,
-        query: elements.searchInput.value
-      });
-    }, SEARCH_DEBOUNCE_MS);
   }
 
   function requestCurrentLocation() {
@@ -481,12 +583,13 @@
     navigator.geolocation.getCurrentPosition(
       (position) => {
         state.permissionState = "granted";
-        fetchNearby(
+        fetchLocations(
           {
             lat: position.coords.latitude,
             lng: position.coords.longitude
           },
-          "your current location"
+          "your current location",
+          "geolocation"
         );
       },
       (error) => {
@@ -520,23 +623,79 @@
       return;
     }
 
-    fetchNearby({ lat, lng }, "your chosen coordinates");
+    fetchLocations({ lat, lng }, "your chosen coordinates", "manual");
+  }
+
+  function clearSearchTimer() {
+    if (!searchTimer) {
+      return;
+    }
+
+    window.clearTimeout(searchTimer);
+    searchTimer = null;
+  }
+
+  function syncFiltersFromControls() {
+    state.searchQuery = elements.searchInput.value;
+    state.filters.category = elements.categoryInput.value;
+    state.filters.radius = normalizeRadius(elements.radiusSelect.value);
+    state.filters.verifiedOnly = elements.verifiedOnly.checked;
+  }
+
+  function scheduleTypedSearch() {
+    syncFiltersFromControls();
+    state.error = null;
+    clearSearchTimer();
+    syncUrl();
+
+    if (!hasTypedSearch()) {
+      fetchLocations(state.center, state.centerLabel, state.centerSource);
+      return;
+    }
+
+    state.loading = true;
+    renderStatus();
+    renderList();
+
+    searchTimer = window.setTimeout(() => {
+      searchTimer = null;
+      fetchLocations(state.center, state.centerLabel, state.centerSource);
+    }, config.searchDebounceMs);
+  }
+
+  function applyDiscreteFilters() {
+    syncFiltersFromControls();
+    state.error = null;
+    clearSearchTimer();
+    fetchLocations(state.center, state.centerLabel, state.centerSource);
   }
 
   elements.useLocation.addEventListener("click", requestCurrentLocation);
   elements.useFallback.addEventListener("click", () =>
-    fetchNearby(
+    fetchLocations(
       {
         lat: config.fallbackCenter.lat,
         lng: config.fallbackCenter.lng
       },
-      config.fallbackCenter.label
+      config.fallbackCenter.label,
+      "fallback"
     )
   );
   elements.manualForm.addEventListener("submit", submitManualLocation);
-  elements.searchInput.addEventListener("input", scheduleSearch);
+  elements.searchInput.addEventListener("input", scheduleTypedSearch);
+  elements.categoryInput.addEventListener("input", scheduleTypedSearch);
+  elements.radiusSelect.addEventListener("change", applyDiscreteFilters);
+  elements.verifiedOnly.addEventListener("change", applyDiscreteFilters);
+
   for (const button of elements.tabButtons) {
     button.addEventListener("click", () => setActiveTab(button.dataset.tab));
+  }
+
+  applyStateToControls();
+
+  if (state.center || hasSearchCriteria()) {
+    fetchLocations(state.center, state.centerLabel, state.centerSource);
+    return;
   }
 
   renderStatus();
