@@ -22,6 +22,8 @@
 - 2026-03-09: `npm test` in this checkout initially failed before product assertions because the declared `better-sqlite3` dependency had not been installed locally; `AGENTS.md` now calls out `npm install` as a fresh-checkout prerequisite.
 - 2026-03-09: Milestone 3 search-bar work moved forward after wiring the browser shell to the existing search API with debounced requests and focused client/server coverage.
 - 2026-03-09: The next unblocked item in delivery order is Milestone 3 UI filters for category, radius, and recently verified state, which can now build on the shared search shell.
+- 2026-03-08: Tooling migration note: the repository now standardizes on `pnpm` with a committed `pnpm-lock.yaml` and `packageManager` field so future install/test loops use one package manager consistently.
+- 2026-03-08: The pnpm migration also whitelists `better-sqlite3` as an allowed native build so installs remain non-interactive and the SQLite-backed test suite still runs.
 
 ## Increment Notes (2026-02-20)
 - Why this implementation matters:
