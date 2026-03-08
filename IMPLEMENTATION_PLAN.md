@@ -11,22 +11,9 @@
 
 ## Current Execution Tracker
 - 2026-02-20: Milestone 0 moved to `Complete`.
-- 2026-02-20: Milestone 1 moved to `In Progress`.
 - 2026-02-20: Milestones 2-7 have backend/API work in place and are `In Progress`, but their frontend and operational work is still outstanding.
 - 2026-02-20: Milestone 8 remains `Not Started`.
 - 2026-03-08: Milestone 1 moved to `Complete` after replacing the in-memory store with SQLite-backed persistence, schema migrations, and restart coverage.
-- 2026-03-08: Current persistence is good enough to continue development, but the shell-backed single-file store is now the main structural risk. Next backend work should keep the API contract and tests while refactoring internals to a modular monolith shape.
-- 2026-03-08: Milestone 2A moved to `In Progress`. The first contract-freeze increment added integration coverage for response-shape expectations, report creation, and current error envelope behavior.
-- 2026-03-08: Milestone 2A step 2 completed. `src/db.js` is now a composition layer over a database client, migration runner, repositories, and service modules. Shell-based SQLite execution and automatic boot seeding remain as explicit follow-up tasks.
-- 2026-03-08: Milestone 2A step 3 requires both a new database client and repository call-site changes, because the current repository layer still interpolates SQL through `sqlValue/sqlValues` on top of `/usr/bin/sqlite3`.
-- 2026-03-08: Milestone 2A step 3 completed. The backend now uses direct `better-sqlite3` access with parameterized repository queries and transaction-based migrations/seeding instead of spawning the SQLite CLI.
-- 2026-03-08: API integration tests pass unchanged after the client swap, so the current HTTP contract and restart-persistence behavior remain intact. The next unblocked backend task is removing automatic seed-on-boot behavior.
-- 2026-03-08: Milestone 2A step 4 has one known coupling to remove: the health integration test currently assumes demo data was inserted implicitly during application boot.
-- 2026-03-08: Milestone 2A step 4 completed. Store startup now runs migrations only; demo data moved to an explicit seed entrypoint for dev/test use, and integration coverage now distinguishes empty-boot behavior from explicit seeded setup.
-- 2026-03-08: The next unblocked backend task is Milestone 2A step 5: add repository tests and migration bootstrap tests on top of the new direct SQLite client and explicit seeding flow.
-- 2026-03-08: Milestone 2A step 5 starts from zero direct database coverage; current tests only exercise the persistence layer indirectly through HTTP integration tests.
-- 2026-03-08: Milestone 2A step 5 completed. Direct database coverage now includes migration bootstrap/idempotency, repository persistence behavior, vote upsert semantics, and health count verification against a real temp SQLite database.
-- 2026-03-08: Milestone 2A moved to `Complete`. The backend now has the intended layered structure, direct parameterized SQLite access, explicit seeding, and regression coverage at both API and repository levels.
 - 2026-03-08: The next unblocked item in delivery order is Milestone 2 user-facing work, starting with the mobile shell for map/list tabs.
 
 ## Increment Notes (2026-02-20)
@@ -45,55 +32,6 @@
   - Restart coverage proves the persistence layer is real rather than incidental, which is the core risk this increment was meant to remove.
   - Existing API integration tests still passing confirms the storage swap did not break the established public contract.
 
-## Increment Notes (2026-03-08, Architecture Direction)
-- Why this change in approach matters:
-  - The current code now has a stable API surface, validation rules, and core business logic worth keeping.
-  - The main weakness is internal structure, not product direction. Rebuilding from scratch would waste working behavior; continuing to pile features into the current persistence file would increase risk.
-  - The preferred path is to keep the good edges and replace the weak core: modular monolith, stable API contract, explicit repository boundaries, and direct database access.
-- Why this sequencing matters:
-  - It reduces rework by fixing the backend foundation before more UI and moderation features depend on it.
-  - It keeps delivery moving because feature work can resume immediately after the internal refactor, without changing external behavior.
-
-## Increment Notes (2026-03-08, Milestone 2A Step 1)
-- Why this implementation matters:
-  - Broader integration coverage freezes the current API contract before the persistence internals are restructured, which reduces the risk of accidental endpoint drift during refactoring.
-  - Report submission is now covered alongside existing location, Wi-Fi detail, vote, and restart-persistence flows, giving the refactor a better regression net across the full MVP write surface.
-- Why these tests matter:
-  - They lock down summary/list/detail response shape expectations that clients already depend on, including the absence of nested `wifi_details` in list/search responses.
-  - They capture a current contract detail that would be easy to change by accident: the error envelope omits `details` when no detail payload exists.
-
-## Increment Notes (2026-03-08, Milestone 2A Step 2)
-- Why this implementation matters:
-  - The backend no longer depends on one persistence file that mixes SQL execution, migrations, seeding, repositories, and business logic. That lowers the risk of further refactors and makes the next database-access change isolated to the client layer.
-  - `createStore()` remains the same server-facing boundary, so the rest of the application can continue moving while the backend internals are cleaned up incrementally.
-- Why these tests matter:
-  - The unchanged integration suite proves the module split preserved existing behavior across health, location reads/writes, Wi-Fi detail writes, votes, reports, and restart persistence.
-  - Keeping behavior fixed while restructuring internals reduces the chance that later 2A steps accidentally bundle architecture changes with contract changes.
-
-## Increment Notes (2026-03-08, Milestone 2A Step 3)
-- Why this implementation matters:
-  - Direct database access removes the `/usr/bin/sqlite3` process dependency from the application path and makes persistence behavior part of the app itself instead of shell execution.
-  - Parameterized repository queries replace string-built SQL at the storage boundary, which is the maintainable and spec-aligned foundation needed before more backend work lands.
-- Why these tests matter:
-  - Re-running the existing API integration suite verifies the storage implementation changed without changing the public API contract.
-  - Restart-persistence coverage still passing confirms the new client is truly writing durable state, not just matching happy-path responses.
-
-## Increment Notes (2026-03-08, Milestone 2A Step 4)
-- Why this implementation matters:
-  - Production startup no longer mutates application state implicitly, which matches the spec requirement that seed data be an explicit dev/test action rather than a boot side effect.
-  - A dedicated seed entrypoint gives local development and tests a single supported path for loading demo data without coupling runtime behavior to environment assumptions.
-- Why these tests matter:
-  - The health test now verifies true empty-database startup instead of accidentally validating seeded demo data.
-  - The new explicit-seed integration test protects the dev/test workflow by proving seeded data remains discoverable without reintroducing boot-time mutation.
-
-## Increment Notes (2026-03-08, Milestone 2A Step 5)
-- Why this implementation matters:
-  - The persistence layer now has direct tests at the repository and migration boundary, so future schema or repository changes can fail fast without requiring a full HTTP debugging loop.
-  - Migration bootstrap coverage hardens the empty-database startup path that every new environment depends on.
-- Why these tests matter:
-  - Repository tests verify the actual write/read semantics of locations, Wi-Fi details, votes, reports, and health counts against SQLite rather than only observing them through API responses.
-  - The vote repository test locks down the one-row-per-token upsert behavior at the storage layer, which is a core product rule and easy to regress accidentally.
-
 ## 1. Delivery Strategy
 Ship thin vertical slices in this order:
 1. Discovery first (map + nearby + search).
@@ -102,8 +40,8 @@ Ship thin vertical slices in this order:
 
 Implementation rule for the next increment:
 1. Keep the current HTTP API contract, validation behavior, and confidence semantics.
-2. Replace the persistence internals before adding more major feature surface area.
-3. Resume milestone delivery on top of the refactored backend structure.
+2. Prefer the earliest unblocked user-facing milestone item.
+3. Keep documentation focused on remaining work, not completed migrations/refactors.
 
 ## 1.1 Target Architecture
 Preferred structure for this repository:
@@ -121,52 +59,10 @@ Preferred structure for this repository:
   - repository/database tests
   - API integration tests
 
-Keep from the current implementation:
-- API contract
-- validation logic
-- confidence/freshness logic
-- token/rate-limit concepts
-- integration test coverage
-
-Replace from the current implementation:
-- single-file persistence layer
-- shell-based query execution
-- automatic boot seeding in the main application path
-- mixed concerns inside one module
-
-## 1.2 Transition Plan From Current State
-Best path: delete weak internals, keep stable behavior.
-
-Step 1. Freeze the contract
-- Expand API integration coverage around current endpoints before structural refactors.
-- Verify location creation, Wi-Fi detail creation, votes, reports, and restart persistence remain stable.
-
-Step 2. Introduce the database boundary
-- Split the current persistence implementation into:
-  - database client
-  - migration runner
-  - repositories for locations, Wi-Fi details, votes, reports, and moderation actions
-- Keep route handlers unchanged other than wiring to the new modules.
-
-Step 3. Replace shell-backed persistence
-- Remove process-spawned SQLite calls and move to direct database access with parameterized queries.
-- Preserve the existing SQLite schema and migration history where possible to avoid churn.
-
-Step 4. Make seeding explicit
-- Move seeded demo data out of normal app boot.
-- Add explicit dev/test seed setup so production startup never mutates state implicitly.
-
-Step 5. Strengthen the schema
-- Add missing `CHECK` constraints and indexes for enum-like fields and hot read paths.
-- Add duplicate-detection support fields/indexes needed for location submission work.
-
-Step 6. Add structure-specific tests
-- Add repository tests against a real test database.
-- Add migration bootstrap tests for empty database startup.
-- Keep the API integration suite as the regression net.
-
-Step 7. Resume feature work
-- Continue milestone delivery starting with the earliest unblocked user-facing item after the backend refactor is complete.
+Current baseline:
+- API contract is in place for nearby, search, location detail, location creation, Wi-Fi detail creation, voting, summary, and reporting.
+- Persistence is SQLite-backed with migrations, explicit seeding, repository tests, and API integration tests.
+- Remaining work is primarily user-facing product delivery plus moderation and launch readiness.
 
 ## 2. Milestones and Small Tasks
 
@@ -213,22 +109,6 @@ Tasks:
 
 Exit criteria:
 - [ ] User can open app and see nearby results on map/list.
-
-## Milestone 2A: Backend Structure Refactor - Status: Complete
-Goal: preserve current behavior while replacing the fragile backend core.
-
-Tasks:
-- [x] Freeze the current API contract with broader integration coverage for locations, Wi-Fi details, votes, and reports.
-- [x] Split persistence responsibilities into database client, migration runner, repositories, and service modules.
-- [x] Replace shell-based SQLite execution with direct parameterized database access.
-- [x] Remove automatic seed-on-boot behavior and replace it with explicit dev/test seeding.
-- [x] Add repository tests and migration bootstrap tests.
-- [x] Confirm all existing API tests still pass without endpoint contract changes.
-
-Exit criteria:
-- [x] The backend uses a layered modular structure without a single-file persistence bottleneck.
-- [x] API behavior remains compatible with existing clients and tests.
-- [x] Feature work can continue without building new behavior on the old persistence shape.
 
 ## Milestone 3: Search and Filtering - Status: In Progress
 Goal: fast search experience that feels reliable.
