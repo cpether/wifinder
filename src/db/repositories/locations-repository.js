@@ -12,38 +12,44 @@ export function createLocationsRepository({ db }) {
     },
 
     findActiveById(id) {
-      return db.queryOne(`
-        SELECT id, name, category, lat, lng, address, notes, place_source, created_at, status
-        FROM locations
-        WHERE id = ${db.sqlValue(id)} AND status = 'active';
-      `);
+      return db.queryOne(
+        `
+          SELECT id, name, category, lat, lng, address, notes, place_source, created_at, status
+          FROM locations
+          WHERE id = ? AND status = 'active';
+        `,
+        [id]
+      );
     },
 
     create(payload) {
-      return db.queryOne(`
-        INSERT INTO locations (
-          name,
-          category,
-          lat,
-          lng,
-          address,
-          notes,
-          place_source,
-          created_at,
-          status
-        ) VALUES (
-          ${db.sqlValue(payload.name)},
-          ${db.sqlValue(payload.category)},
-          ${db.sqlValue(payload.lat)},
-          ${db.sqlValue(payload.lng)},
-          ${db.sqlValue(payload.address ?? null)},
-          ${db.sqlValue(payload.notes ?? null)},
-          ${db.sqlValue(payload.place_source ?? "user_submission")},
-          ${db.sqlValue(nowIso())},
-          ${db.sqlValue("active")}
-        )
-        RETURNING id, name, category, lat, lng, address, notes, place_source, created_at, status;
-      `);
+      return db.queryOne(
+        `
+          INSERT INTO locations (
+            name,
+            category,
+            lat,
+            lng,
+            address,
+            notes,
+            place_source,
+            created_at,
+            status
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          RETURNING id, name, category, lat, lng, address, notes, place_source, created_at, status;
+        `,
+        [
+          payload.name,
+          payload.category,
+          payload.lat,
+          payload.lng,
+          payload.address ?? null,
+          payload.notes ?? null,
+          payload.place_source ?? "user_submission",
+          nowIso(),
+          "active"
+        ]
+      );
     }
   };
 }

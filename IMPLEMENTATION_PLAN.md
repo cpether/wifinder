@@ -18,6 +18,9 @@
 - 2026-03-08: Current persistence is good enough to continue development, but the shell-backed single-file store is now the main structural risk. Next backend work should keep the API contract and tests while refactoring internals to a modular monolith shape.
 - 2026-03-08: Milestone 2A moved to `In Progress`. The first contract-freeze increment added integration coverage for response-shape expectations, report creation, and current error envelope behavior.
 - 2026-03-08: Milestone 2A step 2 completed. `src/db.js` is now a composition layer over a database client, migration runner, repositories, and service modules. Shell-based SQLite execution and automatic boot seeding remain as explicit follow-up tasks.
+- 2026-03-08: Milestone 2A step 3 requires both a new database client and repository call-site changes, because the current repository layer still interpolates SQL through `sqlValue/sqlValues` on top of `/usr/bin/sqlite3`.
+- 2026-03-08: Milestone 2A step 3 completed. The backend now uses direct `better-sqlite3` access with parameterized repository queries and transaction-based migrations/seeding instead of spawning the SQLite CLI.
+- 2026-03-08: API integration tests pass unchanged after the client swap, so the current HTTP contract and restart-persistence behavior remain intact. The next unblocked backend task is removing automatic seed-on-boot behavior.
 
 ## Increment Notes (2026-02-20)
 - Why this implementation matters:
@@ -59,6 +62,14 @@
 - Why these tests matter:
   - The unchanged integration suite proves the module split preserved existing behavior across health, location reads/writes, Wi-Fi detail writes, votes, reports, and restart persistence.
   - Keeping behavior fixed while restructuring internals reduces the chance that later 2A steps accidentally bundle architecture changes with contract changes.
+
+## Increment Notes (2026-03-08, Milestone 2A Step 3)
+- Why this implementation matters:
+  - Direct database access removes the `/usr/bin/sqlite3` process dependency from the application path and makes persistence behavior part of the app itself instead of shell execution.
+  - Parameterized repository queries replace string-built SQL at the storage boundary, which is the maintainable and spec-aligned foundation needed before more backend work lands.
+- Why these tests matter:
+  - Re-running the existing API integration suite verifies the storage implementation changed without changing the public API contract.
+  - Restart-persistence coverage still passing confirms the new client is truly writing durable state, not just matching happy-path responses.
 
 ## 1. Delivery Strategy
 Ship thin vertical slices in this order:
@@ -186,10 +197,10 @@ Goal: preserve current behavior while replacing the fragile backend core.
 Tasks:
 - [x] Freeze the current API contract with broader integration coverage for locations, Wi-Fi details, votes, and reports.
 - [x] Split persistence responsibilities into database client, migration runner, repositories, and service modules.
-- [ ] Replace shell-based SQLite execution with direct parameterized database access.
+- [x] Replace shell-based SQLite execution with direct parameterized database access.
 - [ ] Remove automatic seed-on-boot behavior and replace it with explicit dev/test seeding.
 - [ ] Add repository tests and migration bootstrap tests.
-- [ ] Confirm all existing API tests still pass without endpoint contract changes.
+- [x] Confirm all existing API tests still pass without endpoint contract changes.
 
 Exit criteria:
 - [ ] The backend uses a layered modular structure without a single-file persistence bottleneck.

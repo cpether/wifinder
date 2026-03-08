@@ -28,12 +28,9 @@ export function runMigrations(db) {
     }
 
     const migrationSql = fs.readFileSync(path.join(MIGRATIONS_DIR, filename), "utf8");
-    db.execute(`
-      BEGIN IMMEDIATE;
-      ${migrationSql}
-      INSERT INTO schema_migrations (filename, applied_at)
-      VALUES (${db.sqlValue(filename)}, ${db.sqlValue(nowIso())});
-      COMMIT;
-    `);
+    db.transaction(() => {
+      db.execute(migrationSql);
+      db.execute("INSERT INTO schema_migrations (filename, applied_at) VALUES (?, ?);", [filename, nowIso()]);
+    });
   }
 }

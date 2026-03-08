@@ -7,49 +7,49 @@ export function seedDefaultData(db) {
   }
 
   const createdAt = nowIso();
-  db.execute(`
-    BEGIN IMMEDIATE;
-    INSERT INTO locations (
-      name,
-      category,
-      lat,
-      lng,
-      address,
-      notes,
-      place_source,
-      created_at,
-      status
-    ) VALUES (
-      ${db.sqlValue("Central Library Cafe")},
-      ${db.sqlValue("cafe")},
-      51.5079,
-      -0.1283,
-      ${db.sqlValue("Trafalgar Sq, London")},
-      ${db.sqlValue("Large seating area")},
-      ${db.sqlValue("seed")},
-      ${db.sqlValue(createdAt)},
-      ${db.sqlValue("active")}
+  db.transaction(() => {
+    const insertedLocation = db.queryOne(
+      `
+        INSERT INTO locations (
+          name,
+          category,
+          lat,
+          lng,
+          address,
+          notes,
+          place_source,
+          created_at,
+          status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        RETURNING id;
+      `,
+      [
+        "Central Library Cafe",
+        "cafe",
+        51.5079,
+        -0.1283,
+        "Trafalgar Sq, London",
+        "Large seating area",
+        "seed",
+        createdAt,
+        "active"
+      ]
     );
 
-    INSERT INTO wifi_details (
-      location_id,
-      ssid,
-      password,
-      access_notes,
-      time_limits,
-      purchase_required,
-      created_at,
-      status
-    ) VALUES (
-      last_insert_rowid(),
-      ${db.sqlValue("LibraryGuest")},
-      NULL,
-      ${db.sqlValue("Ask staff for current daily code.")},
-      NULL,
-      0,
-      ${db.sqlValue(createdAt)},
-      ${db.sqlValue("active")}
+    db.execute(
+      `
+        INSERT INTO wifi_details (
+          location_id,
+          ssid,
+          password,
+          access_notes,
+          time_limits,
+          purchase_required,
+          created_at,
+          status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+      `,
+      [insertedLocation.id, "LibraryGuest", null, "Ask staff for current daily code.", null, false, createdAt, "active"]
     );
-    COMMIT;
-  `);
+  });
 }

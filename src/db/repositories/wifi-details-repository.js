@@ -15,50 +15,59 @@ export function createWifiDetailsRepository({ db }) {
       }
 
       return db
-        .query(`
-          SELECT id, location_id, ssid, password, access_notes, time_limits, purchase_required, created_at, status
-          FROM wifi_details
-          WHERE status = 'active'
-            AND location_id IN (${db.sqlValues(locationIds)})
-          ORDER BY created_at DESC, id DESC;
-        `)
+        .query(
+          `
+            SELECT id, location_id, ssid, password, access_notes, time_limits, purchase_required, created_at, status
+            FROM wifi_details
+            WHERE status = 'active'
+              AND location_id IN (${db.placeholders(locationIds.length)})
+            ORDER BY created_at DESC, id DESC;
+          `,
+          locationIds
+        )
         .map(mapWifiDetail);
     },
 
     findActiveById(id) {
-      const row = db.queryOne(`
-        SELECT id, location_id, ssid, password, access_notes, time_limits, purchase_required, created_at, status
-        FROM wifi_details
-        WHERE id = ${db.sqlValue(id)} AND status = 'active';
-      `);
+      const row = db.queryOne(
+        `
+          SELECT id, location_id, ssid, password, access_notes, time_limits, purchase_required, created_at, status
+          FROM wifi_details
+          WHERE id = ? AND status = 'active';
+        `,
+        [id]
+      );
 
       return row ? mapWifiDetail(row) : null;
     },
 
     create(locationId, payload) {
       return mapWifiDetail(
-        db.queryOne(`
-          INSERT INTO wifi_details (
-            location_id,
-            ssid,
-            password,
-            access_notes,
-            time_limits,
-            purchase_required,
-            created_at,
-            status
-          ) VALUES (
-            ${db.sqlValue(locationId)},
-            ${db.sqlValue(payload.ssid)},
-            ${db.sqlValue(payload.password ?? null)},
-            ${db.sqlValue(payload.access_notes ?? null)},
-            ${db.sqlValue(payload.time_limits ?? null)},
-            ${db.sqlValue(payload.purchase_required ?? false)},
-            ${db.sqlValue(nowIso())},
-            ${db.sqlValue("active")}
-          )
-          RETURNING id, location_id, ssid, password, access_notes, time_limits, purchase_required, created_at, status;
-        `)
+        db.queryOne(
+          `
+            INSERT INTO wifi_details (
+              location_id,
+              ssid,
+              password,
+              access_notes,
+              time_limits,
+              purchase_required,
+              created_at,
+              status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            RETURNING id, location_id, ssid, password, access_notes, time_limits, purchase_required, created_at, status;
+          `,
+          [
+            locationId,
+            payload.ssid,
+            payload.password ?? null,
+            payload.access_notes ?? null,
+            payload.time_limits ?? null,
+            payload.purchase_required ?? false,
+            nowIso(),
+            "active"
+          ]
+        )
       );
     }
   };

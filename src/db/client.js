@@ -1,8 +1,6 @@
-import { execFileSync } from "node:child_process";
+import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
-
-const SQLITE_BINARY = "/usr/bin/sqlite3";
 
 export function nowIso() {
   return new Date().toISOString();
@@ -12,57 +10,46 @@ function resolveDbPath(dbPath) {
   return path.resolve(process.cwd(), dbPath);
 }
 
-function runSql(dbPath, sql, { json = false } = {}) {
-  const args = json ? ["-json", dbPath] : [dbPath];
-  const output = execFileSync(SQLITE_BINARY, args, {
-    encoding: "utf8",
-    input: `PRAGMA foreign_keys = ON;\n${sql}`
-  });
-
-  if (!json) {
-    return undefined;
-  }
-
-  const trimmed = output.trim();
-  return trimmed.length === 0 ? [] : JSON.parse(trimmed);
-}
-
-function sqlValue(value) {
-  if (value === null || value === undefined) {
-    return "NULL";
-  }
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) {
+function normalizeParams(params = []) {
+  return params.map((value) => {
+    if (typeof value === "number" && !Number.isFinite(value)) {
       throw new Error("Cannot persist non-finite number");
     }
-    return String(value);
-  }
-  if (typeof value === "boolean") {
-    return value ? "1" : "0";
-  }
-  return `'${String(value).replaceAll("'", "''")}'`;
-}
-
-function sqlValues(values) {
-  return values.map((value) => sqlValue(value)).join(", ");
+    if (typeof value === "boolean") {
+      return value ? 1 : 0;
+    }
+    return value ?? null;
+  });
 }
 
 export function createDbClient({ dbPath = "data/wifinder.sqlite" } = {}) {
   const resolvedDbPath = resolveDbPath(dbPath);
   fs.mkdirSync(path.dirname(resolvedDbPath), { recursive: true });
+  const database = new Database(resolvedDbPath);
+  database.pragma("foreign_keys = ON");
 
   return {
     dbPath: resolvedDbPath,
-    sqlValue,
-    sqlValues,
-    execute(sql) {
-      runSql(resolvedDbPath, sql);
+    placeholders(count) {
+      return Array.from({ length: count }, () => "?").join(", ");
     },
-    query(sql) {
-      return runSql(resolvedDbPath, sql, { json: true });
+    execute(sql, params = []) {
+      const normalizedParams = normalizeParams(params);
+      if (normalizedParams.length === 0) {
+        database.exec(sql);
+        return;
+      }
+
+      database.prepare(sql).run(...normalizedParams);
     },
-    queryOne(sql) {
-      return this.query(sql)[0] ?? null;
+    query(sql, params = []) {
+      return database.prepare(sql).all(...normalizeParams(params));
+    },
+    queryOne(sql, params = []) {
+      return database.prepare(sql).get(...normalizeParams(params)) ?? null;
+    },
+    transaction(run) {
+      return database.transaction(run)();
     }
   };
 }
