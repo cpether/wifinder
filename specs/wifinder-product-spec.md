@@ -1,8 +1,8 @@
 # WiFinder Product Spec (Web MVP)
 
 ## Document Status
-- Version: v1
-- Date: 2026-02-20
+- Version: v2
+- Date: 2026-03-08
 - Scope: Mobile-first web app only (no native app)
 
 ## Locked Product Decisions
@@ -10,6 +10,26 @@
 - Wi-Fi detail visibility: Public (including passwords when submitted).
 - Authentication: No user auth for MVP.
 - Launch geography: United Kingdom first.
+
+## Implementation Architecture (MVP)
+- Application shape: modular monolith. Keep one codebase and one deployable app for MVP rather than splitting services.
+- API boundary: preserve the documented HTTP contract as the stable integration boundary while internal modules evolve.
+- Backend layering:
+  - route/http layer for request parsing and response shaping
+  - validation layer for input contracts
+  - domain/service layer for business logic such as confidence, duplicate detection, and moderation rules
+  - repository layer for persistence operations
+  - database client + migrations layer as the single source of truth for storage
+- Persistence direction:
+  - durable relational storage is required for MVP
+  - migrations are the authoritative schema definition
+  - seed data must be explicit dev/test setup, not automatic production boot behavior
+- Transition note:
+  - the current repository contains a working but transitional SQLite-backed implementation
+  - the next backend refactor should keep the API contract, validation rules, and tests, while replacing the single-file persistence implementation with a cleaner layered structure
+- Scaling direction:
+  - current MVP can continue on SQLite while traffic and moderation volume are low
+  - if nearby/search scale or richer geo queries are needed, the preferred upgrade path is PostgreSQL, with PostGIS if geo complexity justifies it
 
 ## 1. Product Goal
 Help people quickly find nearby venues with free Wi-Fi and verify whether current Wi-Fi details still work.
@@ -85,6 +105,10 @@ Help people quickly find nearby venues with free Wi-Fi and verify whether curren
 - Accessibility baseline: WCAG AA contrast, semantic labels, keyboard focus states.
 - Privacy baseline: clear notice for geolocation and user-submitted public data.
 - Security baseline: input validation, output escaping, CSRF protections, API key restrictions.
+- Maintainability baseline:
+  - avoid single-file implementations that mix HTTP, persistence, migrations, seeding, and business logic
+  - use parameterized database access and explicit schema constraints
+  - preserve one relational source of truth for application data
 
 ## 7. Data Model (MVP)
 - `locations`
@@ -130,6 +154,8 @@ Help people quickly find nearby venues with free Wi-Fi and verify whether curren
   - Mitigation: recency weighting, stale badges, explicit vote prompts after view.
 - Risk: API cost spikes from map/search traffic.
   - Mitigation: strict quotas, caching, and budget alerts.
+- Risk: backend complexity grows faster than the current single-file persistence design can safely support.
+  - Mitigation: refactor to a modular monolith structure before expanding feature surface area further.
 
 ## 12. Out of Scope (MVP)
 - Native iOS/Android apps.

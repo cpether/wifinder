@@ -1,8 +1,8 @@
 # WiFinder Implementation Plan (Milestones + Cost)
 
 ## Document Status
-- Version: v1
-- Date: 2026-02-20
+- Version: v2
+- Date: 2026-03-08
 - Linked spec: `specs/wifinder-product-spec.md`
 
 ## Status Legend
@@ -15,6 +15,8 @@
 - 2026-02-20: Milestones 2-7 have backend/API work in place and are `In Progress`, but their frontend and operational work is still outstanding.
 - 2026-02-20: Milestone 8 remains `Not Started`.
 - 2026-03-08: Milestone 1 moved to `Complete` after replacing the in-memory store with SQLite-backed persistence, schema migrations, and restart coverage.
+- 2026-03-08: Current persistence is good enough to continue development, but the shell-backed single-file store is now the main structural risk. Next backend work should keep the API contract and tests while refactoring internals to a modular monolith shape.
+- 2026-03-08: Milestone 2A moved to `In Progress`. The first contract-freeze increment added integration coverage for response-shape expectations, report creation, and current error envelope behavior.
 
 ## Increment Notes (2026-02-20)
 - Why this implementation matters:
@@ -32,11 +34,96 @@
   - Restart coverage proves the persistence layer is real rather than incidental, which is the core risk this increment was meant to remove.
   - Existing API integration tests still passing confirms the storage swap did not break the established public contract.
 
+## Increment Notes (2026-03-08, Architecture Direction)
+- Why this change in approach matters:
+  - The current code now has a stable API surface, validation rules, and core business logic worth keeping.
+  - The main weakness is internal structure, not product direction. Rebuilding from scratch would waste working behavior; continuing to pile features into the current persistence file would increase risk.
+  - The preferred path is to keep the good edges and replace the weak core: modular monolith, stable API contract, explicit repository boundaries, and direct database access.
+- Why this sequencing matters:
+  - It reduces rework by fixing the backend foundation before more UI and moderation features depend on it.
+  - It keeps delivery moving because feature work can resume immediately after the internal refactor, without changing external behavior.
+
+## Increment Notes (2026-03-08, Milestone 2A Step 1)
+- Why this implementation matters:
+  - Broader integration coverage freezes the current API contract before the persistence internals are restructured, which reduces the risk of accidental endpoint drift during refactoring.
+  - Report submission is now covered alongside existing location, Wi-Fi detail, vote, and restart-persistence flows, giving the refactor a better regression net across the full MVP write surface.
+- Why these tests matter:
+  - They lock down summary/list/detail response shape expectations that clients already depend on, including the absence of nested `wifi_details` in list/search responses.
+  - They capture a current contract detail that would be easy to change by accident: the error envelope omits `details` when no detail payload exists.
+
 ## 1. Delivery Strategy
 Ship thin vertical slices in this order:
 1. Discovery first (map + nearby + search).
 2. Contribution loop second (add place, add Wi-Fi, vote).
 3. Risk controls third (moderation, abuse prevention, observability).
+
+Implementation rule for the next increment:
+1. Keep the current HTTP API contract, validation behavior, and confidence semantics.
+2. Replace the persistence internals before adding more major feature surface area.
+3. Resume milestone delivery on top of the refactored backend structure.
+
+## 1.1 Target Architecture
+Preferred structure for this repository:
+- Modular monolith for MVP.
+- One relational source of truth.
+- Clear layering:
+  - HTTP/routes
+  - validation
+  - domain/services
+  - repositories
+  - database client + migrations
+- Explicit seed/dev scripts instead of automatic boot seeding.
+- Tests split by concern:
+  - domain/unit tests
+  - repository/database tests
+  - API integration tests
+
+Keep from the current implementation:
+- API contract
+- validation logic
+- confidence/freshness logic
+- token/rate-limit concepts
+- integration test coverage
+
+Replace from the current implementation:
+- single-file persistence layer
+- shell-based query execution
+- automatic boot seeding in the main application path
+- mixed concerns inside one module
+
+## 1.2 Transition Plan From Current State
+Best path: delete weak internals, keep stable behavior.
+
+Step 1. Freeze the contract
+- Expand API integration coverage around current endpoints before structural refactors.
+- Verify location creation, Wi-Fi detail creation, votes, reports, and restart persistence remain stable.
+
+Step 2. Introduce the database boundary
+- Split the current persistence implementation into:
+  - database client
+  - migration runner
+  - repositories for locations, Wi-Fi details, votes, reports, and moderation actions
+- Keep route handlers unchanged other than wiring to the new modules.
+
+Step 3. Replace shell-backed persistence
+- Remove process-spawned SQLite calls and move to direct database access with parameterized queries.
+- Preserve the existing SQLite schema and migration history where possible to avoid churn.
+
+Step 4. Make seeding explicit
+- Move seeded demo data out of normal app boot.
+- Add explicit dev/test seed setup so production startup never mutates state implicitly.
+
+Step 5. Strengthen the schema
+- Add missing `CHECK` constraints and indexes for enum-like fields and hot read paths.
+- Add duplicate-detection support fields/indexes needed for location submission work.
+
+Step 6. Add structure-specific tests
+- Add repository tests against a real test database.
+- Add migration bootstrap tests for empty database startup.
+- Keep the API integration suite as the regression net.
+
+Step 7. Resume feature work
+- Continue milestone delivery starting with the earliest unblocked user-facing item after the backend refactor is complete.
 
 ## 2. Milestones and Small Tasks
 
@@ -83,6 +170,22 @@ Tasks:
 
 Exit criteria:
 - [ ] User can open app and see nearby results on map/list.
+
+## Milestone 2A: Backend Structure Refactor - Status: In Progress
+Goal: preserve current behavior while replacing the fragile backend core.
+
+Tasks:
+- [x] Freeze the current API contract with broader integration coverage for locations, Wi-Fi details, votes, and reports.
+- [ ] Split persistence responsibilities into database client, migration runner, repositories, and service modules.
+- [ ] Replace shell-based SQLite execution with direct parameterized database access.
+- [ ] Remove automatic seed-on-boot behavior and replace it with explicit dev/test seeding.
+- [ ] Add repository tests and migration bootstrap tests.
+- [ ] Confirm all existing API tests still pass without endpoint contract changes.
+
+Exit criteria:
+- [ ] The backend uses a layered modular structure without a single-file persistence bottleneck.
+- [ ] API behavior remains compatible with existing clients and tests.
+- [ ] Feature work can continue without building new behavior on the old persistence shape.
 
 ## Milestone 3: Search and Filtering - Status: In Progress
 Goal: fast search experience that feels reliable.

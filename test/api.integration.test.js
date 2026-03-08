@@ -68,6 +68,21 @@ async function withServer(run, { dbPath } = {}) {
   }
 }
 
+function assertLocationSummaryShape(location) {
+  assert.equal(typeof location.id, "number");
+  assert.equal(typeof location.name, "string");
+  assert.equal(typeof location.category, "string");
+  assert.equal(typeof location.distance_m, "number");
+  assert.equal(typeof location.wifi_confidence, "number");
+  assert.ok(
+    location.freshness_badge === "Verified recently" ||
+      location.freshness_badge === "Aging" ||
+      location.freshness_badge === "Unknown" ||
+      location.freshness_badge === "Stale"
+  );
+  assert.equal("wifi_details" in location, false);
+}
+
 test("health endpoint returns service metadata and issues token", async () => {
   await withServer(async ({ request }) => {
     const response = await request("/health");
@@ -96,15 +111,21 @@ test("create/read location flow supports nearby and search", async () => {
       `/api/locations/nearby?lat=${encodeURIComponent("51.5255")}&lng=${encodeURIComponent("-0.076")}&radius=1200`
     );
     assert.equal(nearby.status, 200);
-    assert.ok(nearby.body.locations.some((location) => location.id === newId));
+    const nearbyLocation = nearby.body.locations.find((location) => location.id === newId);
+    assert.ok(nearbyLocation);
+    assertLocationSummaryShape(nearbyLocation);
 
     const search = await request("/api/locations/search?q=shoreditch&lat=51.5255&lng=-0.076&radius=5000");
     assert.equal(search.status, 200);
-    assert.ok(search.body.locations.some((location) => location.id === newId));
+    const searchedLocation = search.body.locations.find((location) => location.id === newId);
+    assert.ok(searchedLocation);
+    assertLocationSummaryShape(searchedLocation);
 
     const location = await request(`/api/locations/${newId}`);
     assert.equal(location.status, 200);
     assert.equal(location.body.location.name, "Shoreditch Cowork");
+    assert.ok(Array.isArray(location.body.location.wifi_details));
+    assert.equal(location.body.location.wifi_details.length, 0);
   });
 });
 
@@ -152,6 +173,93 @@ test("wifi detail votes enforce one active vote per token", async () => {
     const summary = await request(`/api/wifi-details/${wifiDetailId}/summary`);
     assert.equal(summary.status, 200);
     assert.equal(summary.body.summary.total_votes, 1);
+  });
+});
+
+test("report submission returns stable shape and increments report counts", async () => {
+  await withServer(async ({ request }) => {
+    const healthBefore = await request("/health");
+    assert.equal(healthBefore.status, 200);
+    const reportsBefore = healthBefore.body.data_counts.reports;
+
+    const createdLocation = await request("/api/locations", {
+      method: "POST",
+      body: {
+        name: "Reportable Cafe",
+        category: "cafe",
+        lat: 51.509,
+        lng: -0.1357
+      }
+    });
+    assert.equal(createdLocation.status, 201);
+
+    const createdWifiDetail = await request(`/api/locations/${createdLocation.body.location.id}/wifi-details`, {
+      method: "POST",
+      body: {
+        ssid: "ReportableGuest"
+      }
+    });
+    assert.equal(createdWifiDetail.status, 201);
+
+    const reportResponse = await request("/api/reports", {
+      method: "POST",
+      body: {
+        target_type: "wifi_detail",
+        target_id: createdWifiDetail.body.wifi_detail.id,
+        reason: " Password is outdated "
+      }
+    });
+    assert.equal(reportResponse.status, 201);
+    assert.equal(typeof reportResponse.body.report.id, "number");
+    assert.equal(reportResponse.body.report.target_type, "wifi_detail");
+    assert.equal(reportResponse.body.report.target_id, createdWifiDetail.body.wifi_detail.id);
+    assert.equal(reportResponse.body.report.reason, "Password is outdated");
+    assert.equal(reportResponse.body.report.status, "open");
+    assert.equal(typeof reportResponse.body.report.created_at, "string");
+    assert.equal(typeof reportResponse.body.report.reporter_token_hash, "string");
+
+    const healthAfter = await request("/health");
+    assert.equal(healthAfter.status, 200);
+    assert.equal(healthAfter.body.data_counts.reports, reportsBefore + 1);
+  });
+});
+
+test("validation and missing-resource errors keep a stable error envelope", async () => {
+  await withServer(async ({ request }) => {
+    const invalidVote = await request("/api/wifi-details/99999/votes", {
+      method: "POST",
+      body: {
+        vote_type: "bad_value"
+      }
+    });
+    assert.equal(invalidVote.status, 400);
+    assert.deepEqual(Object.keys(invalidVote.body), ["error"]);
+    assert.equal(invalidVote.body.error.message, "vote_type must be works or does_not_work");
+    assert.equal("details" in invalidVote.body.error, false);
+
+    const missingLocationWifi = await request("/api/locations/99999/wifi-details", {
+      method: "POST",
+      body: {
+        ssid: "MissingPlaceWifi"
+      }
+    });
+    assert.equal(missingLocationWifi.status, 404);
+    assert.deepEqual(Object.keys(missingLocationWifi.body), ["error"]);
+    assert.equal(missingLocationWifi.body.error.message, "Location not found");
+    assert.equal("details" in missingLocationWifi.body.error, false);
+
+    const invalidReport = await request("/api/reports", {
+      method: "POST",
+      body: {
+        target_type: "other",
+        target_id: 1,
+        reason: "Nope"
+      }
+    });
+    assert.equal(invalidReport.status, 400);
+    assert.deepEqual(Object.keys(invalidReport.body), ["error"]);
+    assert.equal(invalidReport.body.error.message, "target_type must be location or wifi_detail");
+    assert.equal("details" in invalidReport.body.error, false);
   });
 });
 
