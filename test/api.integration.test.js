@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { createApp } from "../src/server.js";
 import { CONFIG } from "../src/config.js";
+import { seedDatabase } from "../src/db/seed.js";
 
 function createTestConfig(dbPath) {
   return {
@@ -68,6 +69,10 @@ async function withServer(run, { dbPath } = {}) {
   }
 }
 
+async function seedTestDatabase(dbPath) {
+  seedDatabase({ dbPath });
+}
+
 function assertLocationSummaryShape(location) {
   assert.equal(typeof location.id, "number");
   assert.equal(typeof location.name, "string");
@@ -88,8 +93,34 @@ test("health endpoint returns service metadata and issues token", async () => {
     const response = await request("/health");
     assert.equal(response.status, 200);
     assert.equal(response.body.status, "ok");
-    assert.ok(response.body.data_counts.locations >= 1);
+    assert.equal(response.body.data_counts.locations, 0);
+    assert.equal(response.body.data_counts.wifi_details, 0);
   });
+});
+
+test("explicit seed setup populates demo data without boot-time mutation", async () => {
+  const { dbPath, cleanup } = await createTestDbPath();
+
+  try {
+    await seedTestDatabase(dbPath);
+
+    await withServer(
+      async ({ request }) => {
+        const health = await request("/health");
+        assert.equal(health.status, 200);
+        assert.equal(health.body.data_counts.locations, 1);
+        assert.equal(health.body.data_counts.wifi_details, 1);
+
+        const nearby = await request("/api/locations/nearby?lat=51.5079&lng=-0.1283&radius=500");
+        assert.equal(nearby.status, 200);
+        assert.equal(nearby.body.locations.length, 1);
+        assert.equal(nearby.body.locations[0].name, "Central Library Cafe");
+      },
+      { dbPath }
+    );
+  } finally {
+    await cleanup();
+  }
 });
 
 test("create/read location flow supports nearby and search", async () => {

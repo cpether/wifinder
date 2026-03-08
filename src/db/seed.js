@@ -1,4 +1,5 @@
-import { nowIso } from "./client.js";
+import { createDbClient, nowIso } from "./client.js";
+import { runMigrations } from "./migrations.js";
 
 export function seedDefaultData(db) {
   const row = db.queryOne("SELECT COUNT(*) AS count FROM locations;");
@@ -52,4 +53,15 @@ export function seedDefaultData(db) {
       [insertedLocation.id, "LibraryGuest", null, "Ask staff for current daily code.", null, false, createdAt, "active"]
     );
   });
+}
+
+export function seedDatabase({ dbPath = "data/wifinder.sqlite" } = {}) {
+  const db = createDbClient({ dbPath });
+
+  try {
+    runMigrations(db);
+    seedDefaultData(db);
+  } finally {
+    db.close();
+  }
 }

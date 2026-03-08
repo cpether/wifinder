@@ -5,7 +5,6 @@ import { createLocationsRepository } from "./db/repositories/locations-repositor
 import { createReportsRepository } from "./db/repositories/reports-repository.js";
 import { createVotesRepository } from "./db/repositories/votes-repository.js";
 import { createWifiDetailsRepository } from "./db/repositories/wifi-details-repository.js";
-import { seedDefaultData } from "./db/seed.js";
 import { createLocationService } from "./services/location-service.js";
 import { createWifiService } from "./services/wifi-service.js";
 
@@ -13,7 +12,6 @@ export function createStore({ dbPath = "data/wifinder.sqlite" } = {}) {
   const db = createDbClient({ dbPath });
 
   runMigrations(db);
-  seedDefaultData(db);
 
   const healthRepository = createHealthRepository({ db });
   const locationsRepository = createLocationsRepository({ db });

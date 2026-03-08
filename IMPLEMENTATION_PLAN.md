@@ -21,6 +21,9 @@
 - 2026-03-08: Milestone 2A step 3 requires both a new database client and repository call-site changes, because the current repository layer still interpolates SQL through `sqlValue/sqlValues` on top of `/usr/bin/sqlite3`.
 - 2026-03-08: Milestone 2A step 3 completed. The backend now uses direct `better-sqlite3` access with parameterized repository queries and transaction-based migrations/seeding instead of spawning the SQLite CLI.
 - 2026-03-08: API integration tests pass unchanged after the client swap, so the current HTTP contract and restart-persistence behavior remain intact. The next unblocked backend task is removing automatic seed-on-boot behavior.
+- 2026-03-08: Milestone 2A step 4 has one known coupling to remove: the health integration test currently assumes demo data was inserted implicitly during application boot.
+- 2026-03-08: Milestone 2A step 4 completed. Store startup now runs migrations only; demo data moved to an explicit seed entrypoint for dev/test use, and integration coverage now distinguishes empty-boot behavior from explicit seeded setup.
+- 2026-03-08: The next unblocked backend task is Milestone 2A step 5: add repository tests and migration bootstrap tests on top of the new direct SQLite client and explicit seeding flow.
 
 ## Increment Notes (2026-02-20)
 - Why this implementation matters:
@@ -70,6 +73,14 @@
 - Why these tests matter:
   - Re-running the existing API integration suite verifies the storage implementation changed without changing the public API contract.
   - Restart-persistence coverage still passing confirms the new client is truly writing durable state, not just matching happy-path responses.
+
+## Increment Notes (2026-03-08, Milestone 2A Step 4)
+- Why this implementation matters:
+  - Production startup no longer mutates application state implicitly, which matches the spec requirement that seed data be an explicit dev/test action rather than a boot side effect.
+  - A dedicated seed entrypoint gives local development and tests a single supported path for loading demo data without coupling runtime behavior to environment assumptions.
+- Why these tests matter:
+  - The health test now verifies true empty-database startup instead of accidentally validating seeded demo data.
+  - The new explicit-seed integration test protects the dev/test workflow by proving seeded data remains discoverable without reintroducing boot-time mutation.
 
 ## 1. Delivery Strategy
 Ship thin vertical slices in this order:
@@ -198,7 +209,7 @@ Tasks:
 - [x] Freeze the current API contract with broader integration coverage for locations, Wi-Fi details, votes, and reports.
 - [x] Split persistence responsibilities into database client, migration runner, repositories, and service modules.
 - [x] Replace shell-based SQLite execution with direct parameterized database access.
-- [ ] Remove automatic seed-on-boot behavior and replace it with explicit dev/test seeding.
+- [x] Remove automatic seed-on-boot behavior and replace it with explicit dev/test seeding.
 - [ ] Add repository tests and migration bootstrap tests.
 - [x] Confirm all existing API tests still pass without endpoint contract changes.
 

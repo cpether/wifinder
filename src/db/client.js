@@ -50,6 +50,9 @@ export function createDbClient({ dbPath = "data/wifinder.sqlite" } = {}) {
     },
     transaction(run) {
       return database.transaction(run)();
+    },
+    close() {
+      database.close();
     }
   };
 }
