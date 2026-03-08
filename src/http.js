@@ -1,11 +1,15 @@
 import { HttpError } from "./errors.js";
 
-export function json(res, statusCode, body, extraHeaders = {}) {
+export function send(res, statusCode, body, contentType, extraHeaders = {}) {
   res.writeHead(statusCode, {
-    "content-type": "application/json; charset=utf-8",
+    "content-type": contentType,
     ...extraHeaders
   });
-  res.end(JSON.stringify(body));
+  res.end(body);
+}
+
+export function json(res, statusCode, body, extraHeaders = {}) {
+  send(res, statusCode, JSON.stringify(body), "application/json; charset=utf-8", extraHeaders);
 }
 
 export async function readJsonBody(req) {

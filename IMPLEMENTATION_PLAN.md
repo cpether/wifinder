@@ -15,6 +15,9 @@
 - 2026-02-20: Milestone 8 remains `Not Started`.
 - 2026-03-08: Milestone 1 moved to `Complete` after replacing the in-memory store with SQLite-backed persistence, schema migrations, and restart coverage.
 - 2026-03-08: The next unblocked item in delivery order is Milestone 2 user-facing work, starting with the mobile shell for map/list tabs.
+- 2026-03-08: Confirmed the repository still has no frontend entrypoint or static assets; Milestone 2 work must start by adding a browser shell on top of the existing nearby/search APIs.
+- 2026-03-08: Milestone 2 moved to `Complete` after shipping a mobile-first web shell, nearby list cards, geolocation and fallback entry, conditional Google Maps rendering, and focused integration coverage for the browser entrypoint.
+- 2026-03-08: The next unblocked item in delivery order is Milestone 3 user-facing work, starting with the search bar and debounce behavior on top of the existing search API.
 
 ## Increment Notes (2026-02-20)
 - Why this implementation matters:
@@ -31,6 +34,14 @@
 - Why these tests matter:
   - Restart coverage proves the persistence layer is real rather than incidental, which is the core risk this increment was meant to remove.
   - Existing API integration tests still passing confirms the storage swap did not break the established public contract.
+
+## Increment Notes (2026-03-08, Milestone 2)
+- Why this implementation matters:
+  - The app now has a real browser entrypoint instead of API-only infrastructure, which unlocks user testing of nearby discovery on mobile without waiting for later contribution flows.
+  - Nearby discovery now uses the existing API contract end-to-end in both list and map contexts, so future search/filter work can extend one surface instead of starting from scratch.
+- Why these tests matter:
+  - Shell-route coverage protects the new HTML/CSS/JS entrypoint from accidental regressions in server routing or asset serving.
+  - Nearby summary assertions lock in the `last_verified_at` metadata that the location cards need, preventing future API changes from silently breaking the client.
 
 ## 1. Delivery Strategy
 Ship thin vertical slices in this order:
@@ -95,20 +106,20 @@ Exit criteria:
 - [x] Nearby and search endpoints can read seeded test data.
 - [x] Durable persistence survives application restart for implemented write paths.
 
-## Milestone 2: Nearby Map Experience - Status: In Progress
+## Milestone 2: Nearby Map Experience - Status: Complete
 Goal: mobile-first discovery working end-to-end.
 
 Tasks:
-- [ ] Build mobile shell with map/list tabs.
-- [ ] Integrate Google Maps JavaScript API.
-- [ ] Implement geolocation permission and fallback entry.
+- [x] Build mobile shell with map/list tabs.
+- [x] Integrate Google Maps JavaScript API.
+- [x] Implement geolocation permission and fallback entry.
 - [x] Build `GET /locations/nearby` endpoint.
-- [ ] Add map pin rendering.
-- [ ] Build location card with key metadata.
-- [ ] Add loading, empty, and permission-denied states.
+- [x] Add map pin rendering.
+- [x] Build location card with key metadata.
+- [x] Add loading, empty, and permission-denied states.
 
 Exit criteria:
-- [ ] User can open app and see nearby results on map/list.
+- [x] User can open app and see nearby results on map/list.
 
 ## Milestone 3: Search and Filtering - Status: In Progress
 Goal: fast search experience that feels reliable.

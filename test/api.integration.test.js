@@ -57,8 +57,11 @@ async function withServer(run, { dbPath } = {}) {
     }
 
     const text = await response.text();
-    const body = text ? JSON.parse(text) : {};
-    return { status: response.status, body };
+    const contentType = response.headers.get("content-type") ?? "";
+    const body =
+      !options.raw && contentType.includes("application/json") && text ? JSON.parse(text) : text;
+
+    return { status: response.status, body, contentType };
   }
 
   try {
@@ -79,6 +82,7 @@ function assertLocationSummaryShape(location) {
   assert.equal(typeof location.category, "string");
   assert.equal(typeof location.distance_m, "number");
   assert.equal(typeof location.wifi_confidence, "number");
+  assert.ok(location.last_verified_at === null || typeof location.last_verified_at === "string");
   assert.ok(
     location.freshness_badge === "Verified recently" ||
       location.freshness_badge === "Aging" ||
@@ -87,6 +91,28 @@ function assertLocationSummaryShape(location) {
   );
   assert.equal("wifi_details" in location, false);
 }
+
+test("web shell route serves the mobile map/list app and static assets", async () => {
+  await withServer(async ({ request }) => {
+    const home = await request("/", { raw: true });
+    assert.equal(home.status, 200);
+    assert.match(home.contentType, /^text\/html/);
+    assert.match(home.body, /Use my location/);
+    assert.match(home.body, /Browse by map or list/);
+    assert.match(home.body, /"nearbyEndpoint":"\/api\/locations\/nearby"/);
+    assert.match(home.body, /"googleMapsApiKey":null/);
+
+    const css = await request("/assets/app.css", { raw: true });
+    assert.equal(css.status, 200);
+    assert.match(css.contentType, /^text\/css/);
+    assert.match(css.body, /\.tab-button/);
+
+    const js = await request("/assets/app.js", { raw: true });
+    assert.equal(js.status, 200);
+    assert.match(js.contentType, /^application\/javascript/);
+    assert.match(js.body, /fetchNearby/);
+  });
+});
 
 test("health endpoint returns service metadata and issues token", async () => {
   await withServer(async ({ request }) => {
@@ -204,6 +230,44 @@ test("wifi detail votes enforce one active vote per token", async () => {
     const summary = await request(`/api/wifi-details/${wifiDetailId}/summary`);
     assert.equal(summary.status, 200);
     assert.equal(summary.body.summary.total_votes, 1);
+  });
+});
+
+test("nearby summaries expose last verified metadata for location cards", async () => {
+  await withServer(async ({ request }) => {
+    const createLocation = await request("/api/locations", {
+      method: "POST",
+      body: {
+        name: "Verified Cafe",
+        category: "cafe",
+        lat: 51.501,
+        lng: -0.1416,
+        address: "St James's, London"
+      }
+    });
+    assert.equal(createLocation.status, 201);
+
+    const createWifi = await request(`/api/locations/${createLocation.body.location.id}/wifi-details`, {
+      method: "POST",
+      body: {
+        ssid: "VerifiedGuest"
+      }
+    });
+    assert.equal(createWifi.status, 201);
+
+    const vote = await request(`/api/wifi-details/${createWifi.body.wifi_detail.id}/votes`, {
+      method: "POST",
+      body: { vote_type: "works" }
+    });
+    assert.equal(vote.status, 200);
+
+    const nearby = await request("/api/locations/nearby?lat=51.501&lng=-0.1416&radius=1200");
+    assert.equal(nearby.status, 200);
+
+    const location = nearby.body.locations.find((item) => item.id === createLocation.body.location.id);
+    assert.ok(location);
+    assert.equal(typeof location.last_verified_at, "string");
+    assert.equal(location.freshness_badge, "Verified recently");
   });
 });
 

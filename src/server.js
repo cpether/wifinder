@@ -6,6 +6,7 @@ import { HttpError, isHttpError } from "./errors.js";
 import { getClientIp, json, readJsonBody } from "./http.js";
 import { createRateLimiter } from "./rate-limit.js";
 import { createTokenManager } from "./token.js";
+import { tryServeWebRoute } from "./web.js";
 import {
   validateCreateLocation,
   validateCreateWifiDetail,
@@ -55,6 +56,11 @@ export function createApp(dependencies = {}) {
       if (method === "GET" && requestUrl.pathname === "/health") {
         statusCode = 200;
         json(res, statusCode, store.health(), responseHeaders);
+        return;
+      }
+
+      if (method === "GET" && tryServeWebRoute({ pathname: requestUrl.pathname, res, config, responseHeaders })) {
+        statusCode = 200;
         return;
       }
 
