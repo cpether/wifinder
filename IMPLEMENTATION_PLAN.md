@@ -14,7 +14,7 @@
 - 2026-02-20: Milestone 1 moved to `In Progress`.
 - 2026-02-20: Milestones 2-7 have backend/API work in place and are `In Progress`, but their frontend and operational work is still outstanding.
 - 2026-02-20: Milestone 8 remains `Not Started`.
-- 2026-02-20: Main Milestone 1 gap is durable persistence. Current storage is in-memory only, so DB schema/migrations and production durability are still outstanding.
+- 2026-03-08: Milestone 1 moved to `Complete` after replacing the in-memory store with SQLite-backed persistence, schema migrations, and restart coverage.
 
 ## Increment Notes (2026-02-20)
 - Why this implementation matters:
@@ -23,6 +23,14 @@
 - Why these tests matter:
   - They verify core user-critical flows end-to-end: health availability, location contribution/read-back, and one-active-vote-per-token behavior.
   - They protect against regressions in the confidence/freshness signal inputs by validating vote update semantics.
+
+## Increment Notes (2026-03-08)
+- Why this implementation matters:
+  - Durable SQLite storage closes the main Milestone 1 production gap so contributed locations, Wi-Fi details, votes, and reports survive process restarts.
+  - File-based migrations create a single source of truth for the MVP data model and make future moderator/admin work build on stable tables instead of ephemeral state.
+- Why these tests matter:
+  - Restart coverage proves the persistence layer is real rather than incidental, which is the core risk this increment was meant to remove.
+  - Existing API integration tests still passing confirms the storage swap did not break the established public contract.
 
 ## 1. Delivery Strategy
 Ship thin vertical slices in this order:
@@ -46,11 +54,11 @@ Tasks:
 Exit criteria:
 - [x] Approved architecture and environment checklist complete.
 
-## Milestone 1: Data and API Base - Status: In Progress
+## Milestone 1: Data and API Base - Status: Complete
 Goal: core data structures and safe write paths.
 
 Tasks:
-- [ ] Create DB schema and migrations for locations, wifi_details, votes, reports, moderation_actions.
+- [x] Create DB schema and migrations for locations, wifi_details, votes, reports, moderation_actions.
 - [x] Implement request validation schemas.
 - [x] Implement anonymous identity token issuance/rotation strategy.
 - [x] Implement API scaffolding and health endpoint.
@@ -59,6 +67,7 @@ Tasks:
 
 Exit criteria:
 - [x] Nearby and search endpoints can read seeded test data.
+- [x] Durable persistence survives application restart for implemented write paths.
 
 ## Milestone 2: Nearby Map Experience - Status: In Progress
 Goal: mobile-first discovery working end-to-end.

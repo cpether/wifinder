@@ -1,11 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { createApp } from "../src/server.js";
 import { CONFIG } from "../src/config.js";
 
-function createTestConfig() {
+function createTestConfig(dbPath) {
   return {
     ...CONFIG,
+    dbPath,
     cooldownMs: {
       locationCreate: 0,
       wifiCreate: 0,
@@ -15,8 +19,17 @@ function createTestConfig() {
   };
 }
 
-async function withServer(run) {
-  const app = createApp({ config: createTestConfig() });
+async function createTestDbPath() {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "wifinder-test-"));
+  return {
+    dbPath: path.join(tempDir, "wifinder.sqlite"),
+    cleanup: async () => fs.rm(tempDir, { recursive: true, force: true })
+  };
+}
+
+async function withServer(run, { dbPath } = {}) {
+  const db = dbPath ? { dbPath, cleanup: async () => {} } : await createTestDbPath();
+  const app = createApp({ config: createTestConfig(db.dbPath) });
   await new Promise((resolve) => app.server.listen(0, resolve));
   const address = app.server.address();
   const baseUrl = `http://127.0.0.1:${address.port}`;
@@ -48,9 +61,10 @@ async function withServer(run) {
   }
 
   try {
-    await run({ request, app });
+    await run({ request, app, dbPath: db.dbPath });
   } finally {
     await new Promise((resolve, reject) => app.server.close((error) => (error ? reject(error) : resolve())));
+    await db.cleanup();
   }
 }
 
@@ -139,4 +153,67 @@ test("wifi detail votes enforce one active vote per token", async () => {
     assert.equal(summary.status, 200);
     assert.equal(summary.body.summary.total_votes, 1);
   });
+});
+
+test("data persists across app restarts with the same database path", async () => {
+  const { dbPath, cleanup } = await createTestDbPath();
+
+  try {
+    let persistedLocationId;
+    let persistedWifiDetailId;
+
+    await withServer(
+      async ({ request }) => {
+        const createLocation = await request("/api/locations", {
+          method: "POST",
+          body: {
+            name: "Persistence Cafe",
+            category: "cafe",
+            lat: 51.5007,
+            lng: -0.1246,
+            address: "Westminster, London"
+          }
+        });
+        assert.equal(createLocation.status, 201);
+        persistedLocationId = createLocation.body.location.id;
+
+        const createWifi = await request(`/api/locations/${persistedLocationId}/wifi-details`, {
+          method: "POST",
+          body: {
+            ssid: "PersistentGuest",
+            password: "daily-pass",
+            purchase_required: true
+          }
+        });
+        assert.equal(createWifi.status, 201);
+        persistedWifiDetailId = createWifi.body.wifi_detail.id;
+
+        const vote = await request(`/api/wifi-details/${persistedWifiDetailId}/votes`, {
+          method: "POST",
+          body: { vote_type: "works" }
+        });
+        assert.equal(vote.status, 200);
+      },
+      { dbPath }
+    );
+
+    await withServer(
+      async ({ request }) => {
+        const location = await request(`/api/locations/${persistedLocationId}`);
+        assert.equal(location.status, 200);
+        assert.equal(location.body.location.name, "Persistence Cafe");
+        assert.equal(location.body.location.wifi_details.length, 1);
+        assert.equal(location.body.location.wifi_details[0].ssid, "PersistentGuest");
+        assert.equal(location.body.location.wifi_details[0].purchase_required, true);
+        assert.equal(location.body.location.wifi_details[0].summary.works, 1);
+
+        const summary = await request(`/api/wifi-details/${persistedWifiDetailId}/summary`);
+        assert.equal(summary.status, 200);
+        assert.equal(summary.body.summary.total_votes, 1);
+      },
+      { dbPath }
+    );
+  } finally {
+    await cleanup();
+  }
 });

@@ -1,4 +1,5 @@
 export const CONFIG = {
+  dbPath: process.env.DB_PATH ?? "data/wifinder.sqlite",
   tokenTtlMs: 1000 * 60 * 60 * 24 * 30,
   tokenRotateMs: 1000 * 60 * 60 * 12,
   rateLimits: {

@@ -29,7 +29,7 @@ function extractDeviceToken(headerValue) {
 
 export function createApp(dependencies = {}) {
   const config = dependencies.config ?? CONFIG;
-  const store = dependencies.store ?? createStore();
+  const store = dependencies.store ?? createStore({ dbPath: config.dbPath });
   const tokenManager =
     dependencies.tokenManager ??
     createTokenManager({ tokenTtlMs: config.tokenTtlMs, tokenRotateMs: config.tokenRotateMs });
