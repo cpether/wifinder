@@ -24,6 +24,10 @@
 - 2026-03-08: Milestone 2A step 4 has one known coupling to remove: the health integration test currently assumes demo data was inserted implicitly during application boot.
 - 2026-03-08: Milestone 2A step 4 completed. Store startup now runs migrations only; demo data moved to an explicit seed entrypoint for dev/test use, and integration coverage now distinguishes empty-boot behavior from explicit seeded setup.
 - 2026-03-08: The next unblocked backend task is Milestone 2A step 5: add repository tests and migration bootstrap tests on top of the new direct SQLite client and explicit seeding flow.
+- 2026-03-08: Milestone 2A step 5 starts from zero direct database coverage; current tests only exercise the persistence layer indirectly through HTTP integration tests.
+- 2026-03-08: Milestone 2A step 5 completed. Direct database coverage now includes migration bootstrap/idempotency, repository persistence behavior, vote upsert semantics, and health count verification against a real temp SQLite database.
+- 2026-03-08: Milestone 2A moved to `Complete`. The backend now has the intended layered structure, direct parameterized SQLite access, explicit seeding, and regression coverage at both API and repository levels.
+- 2026-03-08: The next unblocked item in delivery order is Milestone 2 user-facing work, starting with the mobile shell for map/list tabs.
 
 ## Increment Notes (2026-02-20)
 - Why this implementation matters:
@@ -81,6 +85,14 @@
 - Why these tests matter:
   - The health test now verifies true empty-database startup instead of accidentally validating seeded demo data.
   - The new explicit-seed integration test protects the dev/test workflow by proving seeded data remains discoverable without reintroducing boot-time mutation.
+
+## Increment Notes (2026-03-08, Milestone 2A Step 5)
+- Why this implementation matters:
+  - The persistence layer now has direct tests at the repository and migration boundary, so future schema or repository changes can fail fast without requiring a full HTTP debugging loop.
+  - Migration bootstrap coverage hardens the empty-database startup path that every new environment depends on.
+- Why these tests matter:
+  - Repository tests verify the actual write/read semantics of locations, Wi-Fi details, votes, reports, and health counts against SQLite rather than only observing them through API responses.
+  - The vote repository test locks down the one-row-per-token upsert behavior at the storage layer, which is a core product rule and easy to regress accidentally.
 
 ## 1. Delivery Strategy
 Ship thin vertical slices in this order:
@@ -202,7 +214,7 @@ Tasks:
 Exit criteria:
 - [ ] User can open app and see nearby results on map/list.
 
-## Milestone 2A: Backend Structure Refactor - Status: In Progress
+## Milestone 2A: Backend Structure Refactor - Status: Complete
 Goal: preserve current behavior while replacing the fragile backend core.
 
 Tasks:
@@ -210,13 +222,13 @@ Tasks:
 - [x] Split persistence responsibilities into database client, migration runner, repositories, and service modules.
 - [x] Replace shell-based SQLite execution with direct parameterized database access.
 - [x] Remove automatic seed-on-boot behavior and replace it with explicit dev/test seeding.
-- [ ] Add repository tests and migration bootstrap tests.
+- [x] Add repository tests and migration bootstrap tests.
 - [x] Confirm all existing API tests still pass without endpoint contract changes.
 
 Exit criteria:
-- [ ] The backend uses a layered modular structure without a single-file persistence bottleneck.
-- [ ] API behavior remains compatible with existing clients and tests.
-- [ ] Feature work can continue without building new behavior on the old persistence shape.
+- [x] The backend uses a layered modular structure without a single-file persistence bottleneck.
+- [x] API behavior remains compatible with existing clients and tests.
+- [x] Feature work can continue without building new behavior on the old persistence shape.
 
 ## Milestone 3: Search and Filtering - Status: In Progress
 Goal: fast search experience that feels reliable.
