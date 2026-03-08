@@ -17,6 +17,7 @@
 - 2026-03-08: Milestone 1 moved to `Complete` after replacing the in-memory store with SQLite-backed persistence, schema migrations, and restart coverage.
 - 2026-03-08: Current persistence is good enough to continue development, but the shell-backed single-file store is now the main structural risk. Next backend work should keep the API contract and tests while refactoring internals to a modular monolith shape.
 - 2026-03-08: Milestone 2A moved to `In Progress`. The first contract-freeze increment added integration coverage for response-shape expectations, report creation, and current error envelope behavior.
+- 2026-03-08: Milestone 2A step 2 completed. `src/db.js` is now a composition layer over a database client, migration runner, repositories, and service modules. Shell-based SQLite execution and automatic boot seeding remain as explicit follow-up tasks.
 
 ## Increment Notes (2026-02-20)
 - Why this implementation matters:
@@ -50,6 +51,14 @@
 - Why these tests matter:
   - They lock down summary/list/detail response shape expectations that clients already depend on, including the absence of nested `wifi_details` in list/search responses.
   - They capture a current contract detail that would be easy to change by accident: the error envelope omits `details` when no detail payload exists.
+
+## Increment Notes (2026-03-08, Milestone 2A Step 2)
+- Why this implementation matters:
+  - The backend no longer depends on one persistence file that mixes SQL execution, migrations, seeding, repositories, and business logic. That lowers the risk of further refactors and makes the next database-access change isolated to the client layer.
+  - `createStore()` remains the same server-facing boundary, so the rest of the application can continue moving while the backend internals are cleaned up incrementally.
+- Why these tests matter:
+  - The unchanged integration suite proves the module split preserved existing behavior across health, location reads/writes, Wi-Fi detail writes, votes, reports, and restart persistence.
+  - Keeping behavior fixed while restructuring internals reduces the chance that later 2A steps accidentally bundle architecture changes with contract changes.
 
 ## 1. Delivery Strategy
 Ship thin vertical slices in this order:
@@ -176,7 +185,7 @@ Goal: preserve current behavior while replacing the fragile backend core.
 
 Tasks:
 - [x] Freeze the current API contract with broader integration coverage for locations, Wi-Fi details, votes, and reports.
-- [ ] Split persistence responsibilities into database client, migration runner, repositories, and service modules.
+- [x] Split persistence responsibilities into database client, migration runner, repositories, and service modules.
 - [ ] Replace shell-based SQLite execution with direct parameterized database access.
 - [ ] Remove automatic seed-on-boot behavior and replace it with explicit dev/test seeding.
 - [ ] Add repository tests and migration bootstrap tests.
