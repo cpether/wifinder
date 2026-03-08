@@ -5,12 +5,16 @@
 - Date: 2026-02-20
 - Linked spec: `specs/wifinder-product-spec.md`
 
+## Status Legend
+- Milestone status: `Complete`, `In Progress`, `Not Started`
+- Task status: `- [x]` complete, `- [ ]` not complete
+
 ## Current Execution Tracker
-- 2026-02-20 finding: repository has no `src/*` implementation files yet, so all milestones are currently unimplemented.
-- 2026-02-20 resolved: Milestone 0 stack/moderation decisions are now captured in ADRs (`docs/adr/0001-stack.md`, `docs/adr/0002-no-auth-identity-and-moderation.md`) plus environment/secrets baseline (`docs/environments.md`).
-- 2026-02-20 resolved: Milestone 1 thin slice implemented in `src/*` with API scaffolding, validation, anonymous device-token issuance/rotation, IP+token rate limiting, cooldown checks, and request-level auditing.
-- 2026-02-20 resolved: Integration tests for create/read paths and vote mutation behavior now pass via `npm test` (`test/api.integration.test.js`).
-- Remaining Milestone 1 gap: persistence layer is currently in-memory only (no durable DB schema/migrations yet), so production durability is not satisfied.
+- 2026-02-20: Milestone 0 moved to `Complete`.
+- 2026-02-20: Milestone 1 moved to `In Progress`.
+- 2026-02-20: Milestones 2-7 have backend/API work in place and are `In Progress`, but their frontend and operational work is still outstanding.
+- 2026-02-20: Milestone 8 remains `Not Started`.
+- 2026-02-20: Main Milestone 1 gap is durable persistence. Current storage is in-memory only, so DB schema/migrations and production durability are still outstanding.
 
 ## Increment Notes (2026-02-20)
 - Why this implementation matters:
@@ -28,127 +32,130 @@ Ship thin vertical slices in this order:
 
 ## 2. Milestones and Small Tasks
 
-## Milestone 0: Foundations (Planning + Setup)
+## Milestone 0: Foundations (Planning + Setup) - Status: Complete
 Goal: lock architecture and environments before code delivery.
 
 Tasks:
-- Confirm stack choices (frontend, backend, DB, hosting, analytics).
-- Create architecture decision records (ADRs) for no-auth identity and moderation model.
-- Set up environments: dev/stage/prod.
-- Configure secrets and API key management.
-- Create base repo structure and coding conventions.
-- Define event tracking schema and error logging baseline.
+- [x] Confirm stack choices (frontend, backend, DB, hosting, analytics).
+- [x] Create architecture decision records (ADRs) for no-auth identity and moderation model.
+- [x] Set up environments: dev/stage/prod.
+- [x] Configure secrets and API key management.
+- [x] Create base repo structure and coding conventions.
+- [x] Define event tracking schema and error logging baseline.
 
 Exit criteria:
-- Approved architecture and environment checklist complete.
+- [x] Approved architecture and environment checklist complete.
 
-## Milestone 1: Data and API Base
+## Milestone 1: Data and API Base - Status: In Progress
 Goal: core data structures and safe write paths.
 
 Tasks:
-- Create DB schema and migrations for locations, wifi_details, votes, reports, moderation_actions.
-- Implement request validation schemas.
-- Implement anonymous identity token issuance/rotation strategy.
-- Implement API scaffolding and health endpoint.
-- Implement rate limiting (IP + token) and request-level auditing.
-- Add integration tests for create/read paths.
+- [ ] Create DB schema and migrations for locations, wifi_details, votes, reports, moderation_actions.
+- [x] Implement request validation schemas.
+- [x] Implement anonymous identity token issuance/rotation strategy.
+- [x] Implement API scaffolding and health endpoint.
+- [x] Implement rate limiting (IP + token) and request-level auditing.
+- [x] Add integration tests for create/read paths.
 
 Exit criteria:
-- Nearby and search endpoints can read seeded test data.
+- [x] Nearby and search endpoints can read seeded test data.
 
-## Milestone 2: Nearby Map Experience
+## Milestone 2: Nearby Map Experience - Status: In Progress
 Goal: mobile-first discovery working end-to-end.
 
 Tasks:
-- Build mobile shell with map/list tabs.
-- Integrate Google Maps JavaScript API.
-- Implement geolocation permission and fallback entry.
-- Build `GET /locations/nearby` endpoint and map pin rendering.
-- Build location card with key metadata.
-- Add loading, empty, and permission-denied states.
+- [ ] Build mobile shell with map/list tabs.
+- [ ] Integrate Google Maps JavaScript API.
+- [ ] Implement geolocation permission and fallback entry.
+- [x] Build `GET /locations/nearby` endpoint.
+- [ ] Add map pin rendering.
+- [ ] Build location card with key metadata.
+- [ ] Add loading, empty, and permission-denied states.
 
 Exit criteria:
-- User can open app and see nearby results on map/list.
+- [ ] User can open app and see nearby results on map/list.
 
-## Milestone 3: Search and Filtering
+## Milestone 3: Search and Filtering - Status: In Progress
 Goal: fast search experience that feels reliable.
 
 Tasks:
-- Implement query parser and search ranking.
-- Add search bar with debounce.
-- Add filters (category, radius, recently verified).
-- Add deep link support for search/filter state.
-- Add API and UI tests for search edge cases.
+- [x] Implement query parser and search ranking.
+- [ ] Add search bar with debounce.
+- [x] Add API support for filters (category, radius, recently verified).
+- [ ] Add UI filters (category, radius, recently verified).
+- [ ] Add deep link support for search/filter state.
+- [ ] Add API and UI tests for search edge cases.
 
 Exit criteria:
-- Search returns relevant results and filters persist in URL.
+- [ ] Search returns relevant results and filters persist in URL.
 
-## Milestone 4: Add New Location
+## Milestone 4: Add New Location - Status: In Progress
 Goal: users can contribute new places with duplicate protection.
 
 Tasks:
-- Build add-location form flow.
-- Integrate address autocomplete/map pin placement.
-- Implement duplicate detection checks.
-- Implement `POST /locations` with validation and sanitization.
-- Add post-submit confirmation and immediate listing display.
-- Add abuse controls (cooldown + max daily submissions/IP).
+- [ ] Build add-location form flow.
+- [ ] Integrate address autocomplete/map pin placement.
+- [ ] Implement duplicate detection checks.
+- [x] Implement `POST /locations` with validation and sanitization.
+- [ ] Add post-submit confirmation and immediate listing display.
+- [x] Add abuse controls (cooldown + max daily submissions/IP).
 
 Exit criteria:
-- New location appears immediately and duplicate prompts work.
+- [ ] New location appears immediately and duplicate prompts work.
 
-## Milestone 5: Add Wi-Fi Detail
+## Milestone 5: Add Wi-Fi Detail - Status: In Progress
 Goal: users can add public Wi-Fi details per location.
 
 Tasks:
-- Build add Wi-Fi detail form.
-- Implement `POST /locations/:id/wifi-details` endpoint.
-- Validate fields and sanitize output.
-- Render Wi-Fi detail timeline on location page.
-- Add quick report action on each Wi-Fi detail.
+- [ ] Build add Wi-Fi detail form.
+- [x] Implement `POST /locations/:id/wifi-details` endpoint.
+- [x] Validate fields and sanitize output.
+- [ ] Render Wi-Fi detail timeline on location page.
+- [ ] Add quick report action on each Wi-Fi detail.
 
 Exit criteria:
-- New Wi-Fi details publish instantly and render correctly.
+- [ ] New Wi-Fi details publish instantly and render correctly.
 
-## Milestone 6: Voting and Confidence
+## Milestone 6: Voting and Confidence - Status: In Progress
 Goal: users can validate Wi-Fi quality over time.
 
 Tasks:
-- Build `works/does_not_work` voting UI.
-- Implement one-active-vote-per-token logic.
-- Implement confidence score and freshness labels.
-- Add stale-state transitions via scheduled job.
-- Add tests for vote changes, recency weighting, and low-sample behavior.
+- [ ] Build `works/does_not_work` voting UI.
+- [x] Implement one-active-vote-per-token logic.
+- [x] Implement confidence score and freshness labels.
+- [ ] Add stale-state transitions via scheduled job.
+- [ ] Add tests for vote changes, recency weighting, and low-sample behavior.
 
 Exit criteria:
-- Vote outcomes update confidence and freshness consistently.
+- [ ] Vote outcomes update confidence and freshness consistently.
 
-## Milestone 7: Moderation and Safety
+## Milestone 7: Moderation and Safety - Status: In Progress
 Goal: keep no-auth data quality acceptable.
 
 Tasks:
-- Build report submission endpoint and UI.
-- Build moderator dashboard (queue + hide/unhide + notes).
-- Implement soft-delete policy and audit logs.
-- Add anomaly detection signals (burst writes, repeated failures).
-- Add operational runbook for incident moderation.
+- [x] Build report submission endpoint.
+- [ ] Build report submission UI.
+- [ ] Build moderator dashboard (queue + hide/unhide + notes).
+- [ ] Implement soft-delete policy and audit logs.
+- [ ] Add anomaly detection signals (burst writes, repeated failures).
+- [ ] Add operational runbook for incident moderation.
 
 Exit criteria:
-- Moderators can remove bad content quickly without data loss.
+- [ ] Moderators can remove bad content quickly without data loss.
 
-## Milestone 8: Launch Readiness (UK)
+## Milestone 8: Launch Readiness (UK) - Status: Not Started
 Goal: production launch with controlled risk.
 
 Tasks:
-- Run E2E smoke tests on mobile devices.
-- Run performance tuning for map/search hot paths.
-- Configure error alerts and budget alerts.
-- Prepare legal pages (terms, privacy, content reporting).
-- Seed initial UK city data (manual or import process).
-- Execute launch checklist and rollback procedure.
+- [ ] Run E2E smoke tests on mobile devices.
+- [ ] Run performance tuning for map/search hot paths.
+- [ ] Configure error alerts and budget alerts.
+- [ ] Prepare legal pages (terms, privacy, content reporting).
+- [ ] Seed initial UK city data (manual or import process).
+- [ ] Execute launch checklist and rollback procedure.
 
 Exit criteria:
-- UK production launch approved.
+- [ ] UK production launch approved.
 
 ## 3. UK Cost Implications (MVP)
 
@@ -209,7 +216,6 @@ Critical path:
 Any delay in moderation tooling is high risk because this MVP is no-auth and immediately publishes user content.
 
 ## 5. Open Decisions Remaining
-- Stack selection (frontend/backend/DB/hosting).
 - Exact confidence score formula and thresholds.
 - Moderator staffing model and response SLA targets.
 - Initial UK city rollout sequence.
