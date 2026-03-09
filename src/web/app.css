@@ -111,7 +111,8 @@ input {
 .action-button:focus-visible,
 .tab-button:hover,
 .tab-button:focus-visible,
-.manual-entry input:focus-visible {
+.manual-entry input:focus-visible,
+.search-input:focus-visible {
   outline: 2px solid var(--rose);
   outline-offset: 2px;
 }
@@ -181,6 +182,34 @@ input {
   background: #fffef8;
   color: var(--ink);
   box-shadow: 0 8px 20px rgba(18, 49, 47, 0.12);
+}
+
+.search-shell {
+  margin-top: 1rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.search-label,
+.search-note {
+  color: var(--muted);
+}
+
+.search-label {
+  font-weight: 700;
+}
+
+.search-input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  padding: 0.9rem 1rem;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.search-note {
+  margin: 0;
+  font-size: 0.9rem;
 }
 
 .status-banner {

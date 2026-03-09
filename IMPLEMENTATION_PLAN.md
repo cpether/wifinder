@@ -18,6 +18,10 @@
 - 2026-03-08: Confirmed the repository still has no frontend entrypoint or static assets; Milestone 2 work must start by adding a browser shell on top of the existing nearby/search APIs.
 - 2026-03-08: Milestone 2 moved to `Complete` after shipping a mobile-first web shell, nearby list cards, geolocation and fallback entry, conditional Google Maps rendering, and focused integration coverage for the browser entrypoint.
 - 2026-03-08: The next unblocked item in delivery order is Milestone 3 user-facing work, starting with the search bar and debounce behavior on top of the existing search API.
+- 2026-03-09: Confirmed `GET /api/locations/search` and ranking/filter backend support already exist; the remaining gap for the earliest Milestone 3 task is the browser search UI and debounced client fetch flow.
+- 2026-03-09: `npm test` in this checkout initially failed before product assertions because the declared `better-sqlite3` dependency had not been installed locally; `AGENTS.md` now calls out `npm install` as a fresh-checkout prerequisite.
+- 2026-03-09: Milestone 3 search-bar work moved forward after wiring the browser shell to the existing search API with debounced requests and focused client/server coverage.
+- 2026-03-09: The next unblocked item in delivery order is Milestone 3 UI filters for category, radius, and recently verified state, which can now build on the shared search shell.
 
 ## Increment Notes (2026-02-20)
 - Why this implementation matters:
@@ -42,6 +46,14 @@
 - Why these tests matter:
   - Shell-route coverage protects the new HTML/CSS/JS entrypoint from accidental regressions in server routing or asset serving.
   - Nearby summary assertions lock in the `last_verified_at` metadata that the location cards need, preventing future API changes from silently breaking the client.
+
+## Increment Notes (2026-03-09, Milestone 3 Search)
+- Why this implementation matters:
+  - The mobile shell now exposes the existing search capability to users, so venue discovery is no longer limited to raw geolocation lookups.
+  - Debounced client requests keep the UI responsive while avoiding wasteful duplicate API calls as users refine place, street, postcode, or area queries.
+- Why these tests matter:
+  - Web-shell assertions lock in the new search bootstrap wiring so future frontend iterations do not silently drop the search surface.
+  - The client-side debounce test protects the exact behavior this increment adds: only the final paused query is sent, and it keeps the current map center when searching around a chosen area.
 
 ## 1. Delivery Strategy
 Ship thin vertical slices in this order:
@@ -126,7 +138,7 @@ Goal: fast search experience that feels reliable.
 
 Tasks:
 - [x] Implement query parser and search ranking.
-- [ ] Add search bar with debounce.
+- [x] Add search bar with debounce.
 - [x] Add API support for filters (category, radius, recently verified).
 - [ ] Add UI filters (category, radius, recently verified).
 - [ ] Add deep link support for search/filter state.

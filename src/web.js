@@ -20,6 +20,7 @@ function renderAppHtml(config) {
   const bootstrap = serializeBootstrap({
     googleMapsApiKey: config.googleMapsApiKey,
     nearbyEndpoint: "/api/locations/nearby",
+    searchEndpoint: "/api/locations/search",
     defaultRadius: 2000,
     fallbackCenter: {
       lat: 51.5072,
@@ -74,6 +75,20 @@ function renderAppHtml(config) {
             <button class="tab-button is-active" id="tab-list" type="button" role="tab" aria-selected="true" aria-controls="panel-list" data-tab="list">List</button>
             <button class="tab-button" id="tab-map" type="button" role="tab" aria-selected="false" aria-controls="panel-map" data-tab="map">Map</button>
           </div>
+        </div>
+
+        <div class="search-shell" role="search" aria-labelledby="search-label">
+          <label class="search-label" id="search-label" for="search-input">Search by place, street, postcode, or area</label>
+          <input
+            class="search-input"
+            id="search-input"
+            name="q"
+            type="search"
+            placeholder="Shoreditch, EC1, library, cafe"
+            autocomplete="off"
+            spellcheck="false"
+          >
+          <p class="search-note">Results update automatically when you pause typing.</p>
         </div>
 
         <div class="status-banner" id="status-banner" aria-live="polite">Choose a location to load nearby venues.</div>

@@ -99,7 +99,9 @@ test("web shell route serves the mobile map/list app and static assets", async (
     assert.match(home.contentType, /^text\/html/);
     assert.match(home.body, /Use my location/);
     assert.match(home.body, /Browse by map or list/);
+    assert.match(home.body, /Search by place, street, postcode, or area/);
     assert.match(home.body, /"nearbyEndpoint":"\/api\/locations\/nearby"/);
+    assert.match(home.body, /"searchEndpoint":"\/api\/locations\/search"/);
     assert.match(home.body, /"googleMapsApiKey":null/);
 
     const css = await request("/assets/app.css", { raw: true });
@@ -110,7 +112,7 @@ test("web shell route serves the mobile map/list app and static assets", async (
     const js = await request("/assets/app.js", { raw: true });
     assert.equal(js.status, 200);
     assert.match(js.contentType, /^application\/javascript/);
-    assert.match(js.body, /fetchNearby/);
+    assert.match(js.body, /SEARCH_DEBOUNCE_MS/);
   });
 });
 
