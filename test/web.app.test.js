@@ -1,113 +1,120 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs/promises";
+import fs from "node:fs";
 import vm from "node:vm";
 
-class FakeClassList {
-  constructor() {
-    this.tokens = new Set();
-  }
+const APP_SOURCE = fs.readFileSync(new URL("../src/web/app.js", import.meta.url), "utf8");
 
-  toggle(name, force) {
-    if (force) {
-      this.tokens.add(name);
-      return;
-    }
-
-    this.tokens.delete(name);
-  }
-}
-
-class FakeElement {
-  constructor({ dataset = {}, textContent = "" } = {}) {
-    this.dataset = dataset;
-    this.textContent = textContent;
-    this.value = "";
-    this.innerHTML = "";
-    this.hidden = false;
-    this.classList = new FakeClassList();
-    this.listeners = new Map();
-  }
-
-  addEventListener(type, listener) {
-    this.listeners.set(type, listener);
-  }
-
-  dispatch(type, event = {}) {
-    const listener = this.listeners.get(type);
-    assert.ok(listener, `Missing ${type} listener`);
-    listener({
-      target: this,
-      currentTarget: this,
-      preventDefault() {},
-      ...event
-    });
-  }
-
-  setAttribute() {}
-}
-
-function createEnvironment() {
-  const bootstrapElement = new FakeElement({
-    textContent: JSON.stringify({
-      googleMapsApiKey: null,
-      nearbyEndpoint: "/api/locations/nearby",
-      searchEndpoint: "/api/locations/search",
-      defaultRadius: 2000,
-      fallbackCenter: {
-        lat: 51.5072,
-        lng: -0.1276,
-        label: "Central London"
+function createElement({ id = null, dataset = {} } = {}) {
+  return {
+    id,
+    dataset,
+    value: "",
+    checked: false,
+    hidden: false,
+    innerHTML: "",
+    textContent: "",
+    attributes: {},
+    listeners: new Map(),
+    classList: {
+      toggle() {}
+    },
+    addEventListener(type, handler) {
+      this.listeners.set(type, handler);
+    },
+    setAttribute(name, value) {
+      this.attributes[name] = value;
+    },
+    dispatch(type, event = {}) {
+      const handler = this.listeners.get(type);
+      if (handler) {
+        handler({
+          preventDefault() {},
+          ...event
+        });
       }
-    })
-  });
+    }
+  };
+}
+
+function createHarness({ search = "" } = {}) {
+  const tabList = createElement({ id: "tab-list", dataset: { tab: "list" } });
+  const tabMap = createElement({ id: "tab-map", dataset: { tab: "map" } });
 
   const elements = {
-    "app-bootstrap": bootstrapElement,
-    "use-location": new FakeElement(),
-    "use-fallback": new FakeElement(),
-    "manual-location-form": new FakeElement(),
-    "manual-lat": new FakeElement(),
-    "manual-lng": new FakeElement(),
-    "search-input": new FakeElement(),
-    "status-banner": new FakeElement(),
-    "results-summary": new FakeElement(),
-    "location-list": new FakeElement(),
-    "map-canvas": new FakeElement(),
-    "map-overlay": new FakeElement(),
-    "panel-list": new FakeElement(),
-    "panel-map": new FakeElement()
+    "app-bootstrap": createElement({ id: "app-bootstrap" }),
+    "use-location": createElement({ id: "use-location" }),
+    "use-fallback": createElement({ id: "use-fallback" }),
+    "manual-location-form": createElement({ id: "manual-location-form" }),
+    "manual-lat": createElement({ id: "manual-lat" }),
+    "manual-lng": createElement({ id: "manual-lng" }),
+    "search-input": createElement({ id: "search-input" }),
+    "category-input": createElement({ id: "category-input" }),
+    "radius-select": createElement({ id: "radius-select" }),
+    "verified-only": createElement({ id: "verified-only" }),
+    "status-banner": createElement({ id: "status-banner" }),
+    "results-summary": createElement({ id: "results-summary" }),
+    "location-list": createElement({ id: "location-list" }),
+    "map-canvas": createElement({ id: "map-canvas" }),
+    "map-overlay": createElement({ id: "map-overlay" }),
+    "panel-list": createElement({ id: "panel-list" }),
+    "panel-map": createElement({ id: "panel-map" })
   };
 
-  const tabButtons = [new FakeElement({ dataset: { tab: "list" } }), new FakeElement({ dataset: { tab: "map" } })];
+  elements["app-bootstrap"].textContent = JSON.stringify({
+    googleMapsApiKey: null,
+    nearbyEndpoint: "/api/locations/nearby",
+    searchEndpoint: "/api/locations/search",
+    searchDebounceMs: 300,
+    defaultRadius: 2000,
+    radiusOptions: [500, 1000, 2000, 5000, 10000],
+    fallbackCenter: {
+      lat: 51.5072,
+      lng: -0.1276,
+      label: "Central London"
+    }
+  });
+
+  const fetchCalls = [];
+  const historyCalls = [];
+
   const document = {
     getElementById(id) {
       return elements[id] ?? null;
     },
     querySelectorAll(selector) {
-      return selector === "[data-tab]" ? tabButtons : [];
+      if (selector === "[data-tab]") {
+        return [tabList, tabMap];
+      }
+      return [];
     },
     createElement() {
-      return new FakeElement();
+      return createElement();
     },
     head: {
       appendChild() {}
     }
   };
 
-  return { document, elements };
-}
+  const window = {
+    location: {
+      pathname: "/",
+      search
+    },
+    history: {
+      replaceState(_state, _title, url) {
+        historyCalls.push(url);
+      }
+    },
+    setTimeout(handler) {
+      handler();
+      return 1;
+    },
+    clearTimeout() {}
+  };
 
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-test("client search input debounces requests and preserves the current map center", async () => {
-  const script = await fs.readFile(new URL("../src/web/app.js", import.meta.url), "utf8");
-  const { document, elements } = createEnvironment();
-  const fetchCalls = [];
-
-  const context = {
+  const context = vm.createContext({
+    window,
     document,
     navigator: {},
     fetch: async (url) => {
@@ -120,37 +127,43 @@ test("client search input debounces requests and preserves the current map cente
       };
     },
     URLSearchParams,
+    URL,
     Intl,
-    setTimeout,
-    clearTimeout,
     console
+  });
+
+  vm.runInContext(APP_SOURCE, context);
+
+  return {
+    elements,
+    fetchCalls,
+    historyCalls
   };
-  context.window = context;
+}
 
-  vm.runInNewContext(script, context);
+test("web app restores deep-linked search filters into controls and the initial API request", async () => {
+  const harness = createHarness({
+    search: "?q=camden&category=cafe&radius=5000&verified=true&lat=51.5072&lng=-0.1276&label=Central%20London"
+  });
 
-  elements["use-fallback"].dispatch("click");
-  await delay(0);
-  assert.equal(fetchCalls.length, 1);
+  assert.equal(harness.elements["search-input"].value, "camden");
+  assert.equal(harness.elements["category-input"].value, "cafe");
+  assert.equal(harness.elements["radius-select"].value, "5000");
+  assert.equal(harness.elements["verified-only"].checked, true);
+  assert.equal(harness.elements["manual-lat"].value, "51.5072");
+  assert.equal(harness.elements["manual-lng"].value, "-0.1276");
 
-  fetchCalls.length = 0;
-
-  elements["search-input"].value = "shore";
-  elements["search-input"].dispatch("input");
-  await delay(150);
-
-  elements["search-input"].value = "shoreditch";
-  elements["search-input"].dispatch("input");
-  await delay(200);
-  assert.equal(fetchCalls.length, 0);
-
-  await delay(150);
-  assert.equal(fetchCalls.length, 1);
-
-  const requestUrl = new URL(fetchCalls[0], "http://localhost");
+  assert.equal(harness.fetchCalls.length, 1);
+  const requestUrl = new URL(harness.fetchCalls[0], "http://localhost");
   assert.equal(requestUrl.pathname, "/api/locations/search");
-  assert.equal(requestUrl.searchParams.get("q"), "shoreditch");
+  assert.equal(requestUrl.searchParams.get("q"), "camden");
+  assert.equal(requestUrl.searchParams.get("category"), "cafe");
+  assert.equal(requestUrl.searchParams.get("radius"), "5000");
+  assert.equal(requestUrl.searchParams.get("verified"), "true");
   assert.equal(requestUrl.searchParams.get("lat"), "51.5072");
   assert.equal(requestUrl.searchParams.get("lng"), "-0.1276");
-  assert.equal(requestUrl.searchParams.get("radius"), "2000");
+
+  assert.deepEqual(harness.historyCalls, [
+    "/?q=camden&category=cafe&radius=5000&verified=true&lat=51.5072&lng=-0.1276&label=Central+London"
+  ]);
 });

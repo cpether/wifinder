@@ -51,6 +51,8 @@ export function createLocationService({
 }) {
   return {
     listNearby({ lat, lng, radius, category }) {
+      const normalizedCategory = category ? category.toLowerCase() : null;
+
       return hydrateLocations(
         locationsRepository.listActive(),
         wifiDetailsRepository,
@@ -64,7 +66,7 @@ export function createLocationService({
           if (distance > radius) {
             return false;
           }
-          if (category && location.category !== category) {
+          if (normalizedCategory && location.category.toLowerCase() !== normalizedCategory) {
             return false;
           }
           return true;
@@ -75,6 +77,7 @@ export function createLocationService({
 
     search({ q, lat, lng, radius, category, verified }) {
       const normalizedQuery = q ? q.toLowerCase() : null;
+      const normalizedCategory = category ? category.toLowerCase() : null;
       const hasCenter = Number.isFinite(lat) && Number.isFinite(lng);
 
       return hydrateLocations(
@@ -112,7 +115,7 @@ export function createLocationService({
               return false;
             }
           }
-          if (category && location.category !== category) {
+          if (normalizedCategory && location.category.toLowerCase() !== normalizedCategory) {
             return false;
           }
           if (verified && location.freshness_badge !== "Verified recently") {

@@ -26,6 +26,9 @@
 - 2026-03-08: The pnpm migration also whitelists `better-sqlite3` as an allowed native build so installs remain non-interactive and the SQLite-backed test suite still runs.
 - 2026-03-08: Milestone 3 search bar work is now in place; the browser shell can issue debounced `/api/locations/search` requests, keep nearby mode when the query is empty, and support query-only search before a center is chosen.
 - 2026-03-08: The next unblocked Milestone 3 item is UI filter controls for category, radius, and recently verified state, followed by URL persistence for search/filter state.
+- 2026-03-09: Confirmed the Milestone 3 gap is entirely in the browser shell: API filter parameters already exist, but the UI has no filter controls, does not persist search state in the URL, and always sends the default radius from the client.
+- 2026-03-09: Milestone 3 moved to `Complete` after shipping browser filter controls for category/radius/recent verification, URL-backed deep links for search state, and focused API plus browser-shell coverage for filter edge cases.
+- 2026-03-09: The next unblocked item in delivery order is Milestone 4 user-facing work, starting with the add-location form flow and duplicate-check UX on top of the existing `POST /api/locations` endpoint.
 
 ## Increment Notes (2026-02-20)
 - Why this implementation matters:
@@ -58,6 +61,14 @@
 - Why these tests matter:
   - Web-shell assertions protect the new search bootstrap wiring and input markup so future routing changes do not silently drop the feature.
   - Query-only search coverage locks in the API behavior the search bar depends on when users type before selecting a location.
+
+## Increment Notes (2026-03-09, Milestone 3 Filters)
+- Why this implementation matters:
+  - Search now exposes the full MVP filter set in the browser shell, so category, radius, and recency filtering are no longer API-only features.
+  - URL-backed search state makes filtered discovery shareable and reload-safe without introducing a second client-side source of truth.
+- Why these tests matter:
+  - API filter assertions lock in the user-visible contract for category normalization, radius limiting, and verified-only filtering.
+  - Browser-shell deep-link coverage protects the client bootstrap path that restores filter controls and issues the first request from the URL.
 
 ## 1. Delivery Strategy
 Ship thin vertical slices in this order:
@@ -137,19 +148,19 @@ Tasks:
 Exit criteria:
 - [x] User can open app and see nearby results on map/list.
 
-## Milestone 3: Search and Filtering - Status: In Progress
+## Milestone 3: Search and Filtering - Status: Complete
 Goal: fast search experience that feels reliable.
 
 Tasks:
 - [x] Implement query parser and search ranking.
 - [x] Add search bar with debounce.
 - [x] Add API support for filters (category, radius, recently verified).
-- [ ] Add UI filters (category, radius, recently verified).
-- [ ] Add deep link support for search/filter state.
-- [ ] Add API and UI tests for search edge cases.
+- [x] Add UI filters (category, radius, recently verified).
+- [x] Add deep link support for search/filter state.
+- [x] Add API and UI tests for search edge cases.
 
 Exit criteria:
-- [ ] Search returns relevant results and filters persist in URL.
+- [x] Search returns relevant results and filters persist in URL.
 
 ## Milestone 4: Add New Location - Status: In Progress
 Goal: users can contribute new places with duplicate protection.

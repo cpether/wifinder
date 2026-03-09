@@ -9,4 +9,5 @@
 - Load demo seed data explicitly with `pnpm db:seed` (or `DB_PATH=... pnpm db:seed` for an isolated database).
 - Run test suite: `pnpm test`
 - Run a focused integration file while iterating on web/API slices: `pnpm test -- test/api.integration.test.js`
+- Run the browser-shell deep-link test directly with: `pnpm test -- test/web.app.test.js`
 - Integration tests start a local HTTP server and require an environment that permits localhost port binding.
