@@ -23,6 +23,7 @@ function renderAppHtml(config) {
     googleMapsApiKey: config.googleMapsApiKey,
     nearbyEndpoint: "/api/locations/nearby",
     searchEndpoint: "/api/locations/search",
+    createLocationEndpoint: "/api/locations",
     searchDebounceMs: 300,
     defaultRadius: DEFAULT_RADIUS,
     radiusOptions: RADIUS_OPTIONS,
@@ -159,6 +160,55 @@ function renderAppHtml(config) {
           <div class="results-summary" id="results-summary">No search run yet.</div>
           <div class="card-list" id="location-list"></div>
         </section>
+      </section>
+
+      <section class="contribute-card" aria-labelledby="add-location-heading">
+        <div class="contribute-header">
+          <div>
+            <p class="eyebrow">Contribute</p>
+            <h2 id="add-location-heading" class="contribute-title">Add a new Wi-Fi venue</h2>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="add-location-use-center" type="button">Use current area</button>
+        </div>
+        <p class="contribute-copy">Add a venue in under a minute. New locations publish immediately after duplicate review.</p>
+        <form class="add-location-form" id="add-location-form">
+          <label class="add-location-field" for="add-location-name">
+            <span class="manual-label-text">Venue name</span>
+            <input class="input-field" id="add-location-name" name="name" autocomplete="off" maxlength="120" placeholder="Shoreditch Study Hall" required>
+          </label>
+          <label class="add-location-field" for="add-location-category">
+            <span class="manual-label-text">Category</span>
+            <input class="input-field" id="add-location-category" name="category" autocomplete="off" maxlength="60" placeholder="cafe, library, coworking" required>
+          </label>
+          <div class="add-location-coordinates">
+            <label class="add-location-field" for="add-location-lat">
+              <span class="manual-label-text">Latitude</span>
+              <input class="input-field" id="add-location-lat" name="lat" inputmode="decimal" placeholder="51.5072" required>
+            </label>
+            <label class="add-location-field" for="add-location-lng">
+              <span class="manual-label-text">Longitude</span>
+              <input class="input-field" id="add-location-lng" name="lng" inputmode="decimal" placeholder="-0.1276" required>
+            </label>
+          </div>
+          <label class="add-location-field" for="add-location-address">
+            <span class="manual-label-text">Address (optional)</span>
+            <input class="input-field" id="add-location-address" name="address" autocomplete="street-address" maxlength="220" placeholder="221B Baker Street, London">
+          </label>
+          <label class="add-location-field" for="add-location-notes">
+            <span class="manual-label-text">Notes (optional)</span>
+            <textarea class="input-field input-field-textarea" id="add-location-notes" name="notes" maxlength="500" placeholder="Quiet upstairs tables near plugs."></textarea>
+          </label>
+          <div class="form-feedback" id="add-location-feedback" aria-live="polite"></div>
+          <section class="duplicate-warning" id="add-location-duplicate-warning" hidden aria-live="polite">
+            <p class="duplicate-warning-title" id="add-location-duplicate-summary"></p>
+            <div class="duplicate-warning-list" id="add-location-duplicate-list"></div>
+            <div class="duplicate-warning-actions">
+              <button class="btn btn-primary btn-sm" id="add-location-submit-anyway" type="button">Submit anyway</button>
+              <button class="btn btn-ghost btn-sm" id="add-location-cancel-warning" type="button">Edit details</button>
+            </div>
+          </section>
+          <button class="btn btn-primary" id="add-location-submit" type="submit">Add venue</button>
+        </form>
       </section>
 
       <!-- ══════ MANUAL COORDINATES (collapsible) ══════ -->

@@ -29,6 +29,10 @@
 - 2026-03-09: Confirmed the Milestone 3 gap is entirely in the browser shell: API filter parameters already exist, but the UI has no filter controls, does not persist search state in the URL, and always sends the default radius from the client.
 - 2026-03-09: Milestone 3 moved to `Complete` after shipping browser filter controls for category/radius/recent verification, URL-backed deep links for search state, and focused API plus browser-shell coverage for filter edge cases.
 - 2026-03-09: The next unblocked item in delivery order is Milestone 4 user-facing work, starting with the add-location form flow and duplicate-check UX on top of the existing `POST /api/locations` endpoint.
+- 2026-03-10: Confirmed the earliest Milestone 4 gap is still the add-location contribution flow: the browser shell has no venue form, the server does not perform duplicate warnings, and the browser currently drops `x-device-token` between requests, which weakens no-auth abuse controls for upcoming contribution features.
+- 2026-03-10: Milestone 4 moved forward after shipping the browser add-location form, server-backed duplicate warnings with submit-anyway support, immediate post-submit listing feedback, and browser persistence for `x-device-token`.
+- 2026-03-10: Fixed an additional browser-shell bug uncovered during this increment: empty URLs were being parsed as a `(0,0)` search center because `Number(null)` was treated as `0`, which triggered a bogus nearby request on first load.
+- 2026-03-10: The next unblocked item in delivery order remains Milestone 4 address autocomplete and map pin placement, which can now layer onto the live add-location form instead of starting from scratch.
 
 ## Increment Notes (2026-02-20)
 - Why this implementation matters:
@@ -69,6 +73,15 @@
 - Why these tests matter:
   - API filter assertions lock in the user-visible contract for category normalization, radius limiting, and verified-only filtering.
   - Browser-shell deep-link coverage protects the client bootstrap path that restores filter controls and issues the first request from the URL.
+
+## Increment Notes (2026-03-10, Milestone 4 Add Location)
+- Why this implementation matters:
+  - Users can now contribute new venues from the browser shell instead of being blocked at the API boundary, which is the first real Milestone 4 product slice.
+  - Duplicate warnings now come from the server using one source of truth for proximity and name similarity, while still allowing intentional submit-anyway behavior for edge cases.
+  - Browser requests now retain the issued anonymous device token, which is required for no-auth abuse controls to behave consistently across contribution flows.
+- Why these tests matter:
+  - API coverage locks in the duplicate-warning contract so future work can safely build address autocomplete and map pin placement on the same create path.
+  - Browser-shell coverage protects the full contribution UX, including duplicate warnings, token reuse, and immediate listing feedback after a successful submission.
 
 ## 1. Delivery Strategy
 Ship thin vertical slices in this order:
@@ -166,11 +179,11 @@ Exit criteria:
 Goal: users can contribute new places with duplicate protection.
 
 Tasks:
-- [ ] Build add-location form flow.
+- [x] Build add-location form flow.
 - [ ] Integrate address autocomplete/map pin placement.
-- [ ] Implement duplicate detection checks.
+- [x] Implement duplicate detection checks.
 - [x] Implement `POST /locations` with validation and sanitization.
-- [ ] Add post-submit confirmation and immediate listing display.
+- [x] Add post-submit confirmation and immediate listing display.
 - [x] Add abuse controls (cooldown + max daily submissions/IP).
 
 Exit criteria:

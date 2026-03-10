@@ -78,7 +78,8 @@ export function validateCreateLocation(body) {
     lng: expectNumber(body.lng, "lng", { min: -180, max: 180, required: true }),
     address: expectString(body.address, "address", { required: false, maxLength: 220 }),
     notes: expectString(body.notes, "notes", { required: false, maxLength: 500 }),
-    place_source: expectString(body.place_source, "place_source", { required: false, maxLength: 80 })
+    place_source: expectString(body.place_source, "place_source", { required: false, maxLength: 80 }),
+    ignore_duplicate_warning: expectBoolean(body.ignore_duplicate_warning, "ignore_duplicate_warning")
   };
 }
 

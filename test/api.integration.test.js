@@ -104,8 +104,12 @@ test("web shell route serves the mobile map/list app and static assets", async (
     assert.match(home.body, /id="category-input"/);
     assert.match(home.body, /id="radius-select"/);
     assert.match(home.body, /id="verified-only"/);
+    assert.match(home.body, /id="add-location-form"/);
+    assert.match(home.body, /id="add-location-name"/);
+    assert.match(home.body, /id="add-location-submit-anyway"/);
     assert.match(home.body, /"nearbyEndpoint":"\/api\/locations\/nearby"/);
     assert.match(home.body, /"searchEndpoint":"\/api\/locations\/search"/);
+    assert.match(home.body, /"createLocationEndpoint":"\/api\/locations"/);
     assert.match(home.body, /"radiusOptions":\[500,1000,2000,5000,10000\]/);
     assert.match(home.body, /"googleMapsApiKey":null/);
 
@@ -190,6 +194,57 @@ test("create/read location flow supports nearby and search", async () => {
     assert.equal(location.body.location.name, "Shoreditch Cowork");
     assert.ok(Array.isArray(location.body.location.wifi_details));
     assert.equal(location.body.location.wifi_details.length, 0);
+  });
+});
+
+test("create location warns on nearby duplicates before allowing submit anyway", async () => {
+  await withServer(async ({ request }) => {
+    const existing = await request("/api/locations", {
+      method: "POST",
+      body: {
+        name: "Shoreditch Study Hall",
+        category: "coworking",
+        lat: 51.5255,
+        lng: -0.076,
+        address: "Old Street, London"
+      }
+    });
+    assert.equal(existing.status, 201);
+
+    const duplicateAttempt = await request("/api/locations", {
+      method: "POST",
+      body: {
+        name: "Shoreditch Study Hall",
+        category: "coworking",
+        lat: 51.5258,
+        lng: -0.0762,
+        address: "Old Street Roundabout, London"
+      }
+    });
+    assert.equal(duplicateAttempt.status, 409);
+    assert.equal(duplicateAttempt.body.error.message, "Potential duplicate location");
+    assert.equal(Array.isArray(duplicateAttempt.body.error.details.duplicates), true);
+    assert.equal(duplicateAttempt.body.error.details.duplicates.length, 1);
+    assert.equal(duplicateAttempt.body.error.details.duplicates[0].name, "Shoreditch Study Hall");
+    assert.equal(typeof duplicateAttempt.body.error.details.duplicates[0].distance_m, "number");
+
+    const overrideAttempt = await request("/api/locations", {
+      method: "POST",
+      body: {
+        name: "Shoreditch Study Hall",
+        category: "coworking",
+        lat: 51.5258,
+        lng: -0.0762,
+        address: "Old Street Roundabout, London",
+        ignore_duplicate_warning: true
+      }
+    });
+    assert.equal(overrideAttempt.status, 201);
+    assert.equal(overrideAttempt.body.location.name, "Shoreditch Study Hall");
+
+    const search = await request("/api/locations/search?q=shoreditch&lat=51.5255&lng=-0.076&radius=500");
+    assert.equal(search.status, 200);
+    assert.equal(search.body.locations.length, 2);
   });
 });
 

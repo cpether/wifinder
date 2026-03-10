@@ -19,9 +19,11 @@
 
   function readInitialState() {
     const params = new URLSearchParams(window.location.search);
-    const lat = Number(params.get("lat"));
-    const lng = Number(params.get("lng"));
-    const hasCenter = Number.isFinite(lat) && Number.isFinite(lng);
+    const hasLat = params.has("lat");
+    const hasLng = params.has("lng");
+    const lat = hasLat ? Number(params.get("lat")) : NaN;
+    const lng = hasLng ? Number(params.get("lng")) : NaN;
+    const hasCenter = hasLat && hasLng && Number.isFinite(lat) && Number.isFinite(lng);
 
     return {
       center: hasCenter ? { lat, lng } : null,
@@ -44,6 +46,21 @@
     categoryInput: document.getElementById("category-input"),
     radiusSelect: document.getElementById("radius-select"),
     verifiedOnly: document.getElementById("verified-only"),
+    addLocationForm: document.getElementById("add-location-form"),
+    addLocationName: document.getElementById("add-location-name"),
+    addLocationCategory: document.getElementById("add-location-category"),
+    addLocationLat: document.getElementById("add-location-lat"),
+    addLocationLng: document.getElementById("add-location-lng"),
+    addLocationAddress: document.getElementById("add-location-address"),
+    addLocationNotes: document.getElementById("add-location-notes"),
+    addLocationUseCenter: document.getElementById("add-location-use-center"),
+    addLocationFeedback: document.getElementById("add-location-feedback"),
+    addLocationDuplicateWarning: document.getElementById("add-location-duplicate-warning"),
+    addLocationDuplicateSummary: document.getElementById("add-location-duplicate-summary"),
+    addLocationDuplicateList: document.getElementById("add-location-duplicate-list"),
+    addLocationSubmit: document.getElementById("add-location-submit"),
+    addLocationSubmitAnyway: document.getElementById("add-location-submit-anyway"),
+    addLocationCancelWarning: document.getElementById("add-location-cancel-warning"),
     statusBanner: document.getElementById("status-banner"),
     resultsSummary: document.getElementById("results-summary"),
     list: document.getElementById("location-list"),
@@ -98,6 +115,7 @@
 
   /* ═══════ App State ═══════ */
   const initialState = readInitialState();
+  const DEVICE_TOKEN_STORAGE_KEY = "wifinder-device-token";
   const state = {
     activeTab: "list",
     loading: false,
@@ -112,6 +130,13 @@
       category: initialState.category,
       radius: initialState.radius,
       verifiedOnly: initialState.verifiedOnly
+    },
+    addLocation: {
+      submitting: false,
+      error: null,
+      success: null,
+      duplicates: [],
+      pendingPayload: null
     }
   };
 
@@ -122,6 +147,7 @@
   let infoWindow = null;
   let searchTimer = null;
   let requestSequence = 0;
+  let deviceToken = getStoredDeviceToken();
 
   function normalizeSearchQuery() {
     return state.searchQuery.trim();
@@ -208,6 +234,56 @@
       elements.manualLat.value = String(state.center.lat);
       elements.manualLng.value = String(state.center.lng);
     }
+
+    syncAddLocationCoordinates();
+  }
+
+  function getStoredDeviceToken() {
+    try {
+      return window.localStorage ? window.localStorage.getItem(DEVICE_TOKEN_STORAGE_KEY) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function storeDeviceToken(token) {
+    if (!token) {
+      return;
+    }
+
+    deviceToken = token;
+    try {
+      if (window.localStorage) {
+        window.localStorage.setItem(DEVICE_TOKEN_STORAGE_KEY, token);
+      }
+    } catch {
+      /* storage unavailable */
+    }
+  }
+
+  async function apiJsonRequest(url, options = {}) {
+    const headers = { ...(options.headers ?? {}) };
+    if (deviceToken) {
+      headers["x-device-token"] = deviceToken;
+    }
+    if (options.body !== undefined && !("content-type" in headers) && !("Content-Type" in headers)) {
+      headers["content-type"] = "application/json";
+    }
+
+    const response = await fetch(url, {
+      method: options.method ?? "GET",
+      headers,
+      body: options.body === undefined ? undefined : JSON.stringify(options.body)
+    });
+    const nextToken = response.headers && typeof response.headers.get === "function"
+      ? response.headers.get("x-device-token")
+      : null;
+    if (nextToken) {
+      storeDeviceToken(nextToken);
+    }
+
+    const payload = await response.json();
+    return { response, payload };
   }
 
   function syncUrl() {
@@ -542,6 +618,183 @@
     return hasSearchCriteria() ? "search" : "nearby";
   }
 
+  function syncAddLocationCoordinates(force = false) {
+    if (!state.center) {
+      return;
+    }
+
+    if (force || !elements.addLocationLat.value.trim()) {
+      elements.addLocationLat.value = String(state.center.lat);
+    }
+
+    if (force || !elements.addLocationLng.value.trim()) {
+      elements.addLocationLng.value = String(state.center.lng);
+    }
+  }
+
+  function resetAddLocationFeedback() {
+    state.addLocation.error = null;
+    state.addLocation.success = null;
+  }
+
+  function clearDuplicateWarning() {
+    state.addLocation.duplicates = [];
+    state.addLocation.pendingPayload = null;
+  }
+
+  function renderAddLocation() {
+    const feedback = state.addLocation.submitting
+      ? "Checking for duplicates and saving your venue..."
+      : state.addLocation.error ??
+        state.addLocation.success ??
+        "Use the current area or enter precise coordinates for the new venue.";
+    const feedbackState = state.addLocation.submitting
+      ? "pending"
+      : state.addLocation.error
+        ? "error"
+        : state.addLocation.success
+          ? "success"
+          : "idle";
+
+    elements.addLocationFeedback.textContent = feedback;
+    elements.addLocationFeedback.setAttribute("data-state", feedbackState);
+    elements.addLocationSubmit.disabled = state.addLocation.submitting;
+    elements.addLocationUseCenter.disabled = state.addLocation.submitting;
+    elements.addLocationSubmitAnyway.disabled =
+      state.addLocation.submitting || !state.addLocation.pendingPayload;
+    elements.addLocationCancelWarning.disabled = state.addLocation.submitting;
+
+    const duplicateCount = state.addLocation.duplicates.length;
+    elements.addLocationDuplicateWarning.hidden = duplicateCount === 0;
+    if (duplicateCount === 0) {
+      elements.addLocationDuplicateSummary.textContent = "";
+      elements.addLocationDuplicateList.innerHTML = "";
+      return;
+    }
+
+    elements.addLocationDuplicateSummary.textContent =
+      duplicateCount === 1
+        ? "This venue looks close to an existing listing."
+        : "These venues look close to your new listing.";
+    elements.addLocationDuplicateList.innerHTML = state.addLocation.duplicates
+      .map(
+        (location) => `<article class="duplicate-card">
+          <strong>${escapeHtml(location.name)}</strong>
+          <div>${escapeHtml(location.category)} · ${escapeHtml(formatDistance(location.distance_m))}</div>
+          <div>${escapeHtml(location.address || "No address submitted yet")}</div>
+        </article>`
+      )
+      .join("");
+  }
+
+  function buildAddLocationPayload({ ignoreDuplicateWarning = false } = {}) {
+    const name = elements.addLocationName.value.trim();
+    const category = elements.addLocationCategory.value.trim();
+    const lat = Number(elements.addLocationLat.value);
+    const lng = Number(elements.addLocationLng.value);
+    const address = elements.addLocationAddress.value.trim();
+    const notes = elements.addLocationNotes.value.trim();
+
+    if (!name) {
+      throw new Error("Enter a venue name before submitting.");
+    }
+
+    if (!category) {
+      throw new Error("Enter a category before submitting.");
+    }
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      throw new Error("Enter numeric latitude and longitude values for the venue.");
+    }
+
+    const payload = {
+      name,
+      category,
+      lat,
+      lng
+    };
+
+    if (address) {
+      payload.address = address;
+    }
+
+    if (notes) {
+      payload.notes = notes;
+    }
+
+    if (ignoreDuplicateWarning) {
+      payload.ignore_duplicate_warning = true;
+    }
+
+    return payload;
+  }
+
+  function handleSuccessfulLocationCreate(location) {
+    state.loading = false;
+    state.error = null;
+    state.searchQuery = "";
+    state.filters.category = "";
+    state.filters.verifiedOnly = false;
+    state.center = { lat: location.lat, lng: location.lng };
+    state.centerLabel = location.name;
+    state.centerSource = "created-location";
+    state.locations = [{ ...location, distance_m: 0 }];
+    state.addLocation.success = `${location.name} is now live and visible below.`;
+    clearDuplicateWarning();
+    elements.addLocationName.value = "";
+    elements.addLocationCategory.value = "";
+    elements.addLocationAddress.value = "";
+    elements.addLocationNotes.value = "";
+    syncAddLocationCoordinates(true);
+    applyStateToControls();
+    syncUrl();
+    renderStatus();
+    renderList();
+    syncMap();
+  }
+
+  async function submitAddLocation({ ignoreDuplicateWarning = false } = {}) {
+    if (state.addLocation.submitting) {
+      return;
+    }
+
+    try {
+      const payload = ignoreDuplicateWarning && state.addLocation.pendingPayload
+        ? { ...state.addLocation.pendingPayload, ignore_duplicate_warning: true }
+        : buildAddLocationPayload({ ignoreDuplicateWarning });
+
+      state.addLocation.submitting = true;
+      resetAddLocationFeedback();
+      if (!ignoreDuplicateWarning) {
+        clearDuplicateWarning();
+      }
+      renderAddLocation();
+
+      const { response, payload: responsePayload } = await apiJsonRequest(config.createLocationEndpoint, {
+        method: "POST",
+        body: payload
+      });
+
+      if (response.status === 409 && Array.isArray(responsePayload.error?.details?.duplicates)) {
+        state.addLocation.pendingPayload = buildAddLocationPayload();
+        state.addLocation.duplicates = responsePayload.error.details.duplicates;
+        renderAddLocation();
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(responsePayload.error?.message || "Venue submission failed.");
+      }
+
+      handleSuccessfulLocationCreate(responsePayload.location);
+    } catch (error) {
+      state.addLocation.error = error.message;
+    } finally {
+      state.addLocation.submitting = false;
+      renderAddLocation();
+    }
+  }
+
   async function fetchLocations(
     center = state.center,
     label = state.centerLabel,
@@ -595,8 +848,7 @@
         params.set("verified", "true");
       }
 
-      const response = await fetch(`${endpoint}?${params.toString()}`);
-      const payload = await response.json();
+      const { response, payload } = await apiJsonRequest(`${endpoint}?${params.toString()}`);
 
       if (requestId !== requestSequence) {
         return;
@@ -607,6 +859,7 @@
       }
 
       state.locations = Array.isArray(payload.locations) ? payload.locations : [];
+      syncAddLocationCoordinates();
     } catch (error) {
       if (requestId !== requestSequence) {
         return;
@@ -744,12 +997,51 @@
   elements.categoryInput.addEventListener("input", scheduleTypedSearch);
   elements.radiusSelect.addEventListener("change", applyDiscreteFilters);
   elements.verifiedOnly.addEventListener("change", applyDiscreteFilters);
+  elements.addLocationUseCenter.addEventListener("click", () => {
+    if (state.center) {
+      syncAddLocationCoordinates(true);
+      resetAddLocationFeedback();
+    } else {
+      elements.addLocationLat.value = String(config.fallbackCenter.lat);
+      elements.addLocationLng.value = String(config.fallbackCenter.lng);
+      state.addLocation.success = `No area selected yet. Using ${config.fallbackCenter.label} coordinates.`;
+      state.addLocation.error = null;
+    }
+    clearDuplicateWarning();
+    renderAddLocation();
+  });
+  elements.addLocationForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    submitAddLocation();
+  });
+  elements.addLocationSubmitAnyway.addEventListener("click", () => submitAddLocation({ ignoreDuplicateWarning: true }));
+  elements.addLocationCancelWarning.addEventListener("click", () => {
+    clearDuplicateWarning();
+    resetAddLocationFeedback();
+    renderAddLocation();
+  });
+
+  for (const field of [
+    elements.addLocationName,
+    elements.addLocationCategory,
+    elements.addLocationLat,
+    elements.addLocationLng,
+    elements.addLocationAddress,
+    elements.addLocationNotes
+  ]) {
+    field.addEventListener("input", () => {
+      clearDuplicateWarning();
+      resetAddLocationFeedback();
+      renderAddLocation();
+    });
+  }
 
   for (const button of elements.tabButtons) {
     button.addEventListener("click", () => setActiveTab(button.dataset.tab));
   }
 
   applyStateToControls();
+  renderAddLocation();
 
   if (state.center || hasSearchCriteria()) {
     fetchLocations(state.center, state.centerLabel, state.centerSource);

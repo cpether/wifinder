@@ -104,7 +104,12 @@ export function createApp(dependencies = {}) {
           cooldownMs: config.cooldownMs.locationCreate
         });
 
-        const location = store.createLocation(payload);
+        const { location, duplicates } = store.createLocation(payload, {
+          ignoreDuplicateWarning: payload.ignore_duplicate_warning === true
+        });
+        if (!location) {
+          throw new HttpError(409, "Potential duplicate location", { duplicates });
+        }
         statusCode = 201;
         json(res, statusCode, { location }, responseHeaders);
         return;

@@ -1,6 +1,9 @@
 import { summarizeLocation, summarizeVotes } from "../confidence.js";
 import { distanceMeters } from "../geo.js";
 
+const DUPLICATE_DISTANCE_THRESHOLD_METERS = 150;
+const DUPLICATE_NAME_SIMILARITY_THRESHOLD = 0.6;
+
 function hydrateLocations(locations, wifiDetailsRepository, votesRepository) {
   const wifiDetails = wifiDetailsRepository.listActiveByLocationIds(
     locations.map((location) => location.id)
@@ -42,6 +45,75 @@ function toLocationSummary(location, distance) {
     ...summaryLocation,
     distance_m: distance === null ? null : Math.round(distance)
   };
+}
+
+function normalizeName(value) {
+  return value
+    .toLowerCase()
+    .replaceAll(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replaceAll(/\s+/g, " ");
+}
+
+function tokenizeName(value) {
+  return normalizeName(value).split(" ").filter(Boolean);
+}
+
+function calculateNameSimilarity(left, right) {
+  const normalizedLeft = normalizeName(left);
+  const normalizedRight = normalizeName(right);
+
+  if (!normalizedLeft || !normalizedRight) {
+    return 0;
+  }
+
+  if (normalizedLeft === normalizedRight) {
+    return 1;
+  }
+
+  if (normalizedLeft.includes(normalizedRight) || normalizedRight.includes(normalizedLeft)) {
+    return 0.9;
+  }
+
+  const leftTokens = tokenizeName(left);
+  const rightTokens = tokenizeName(right);
+  const rightTokenSet = new Set(rightTokens);
+  const overlapCount = leftTokens.filter((token) => rightTokenSet.has(token)).length;
+  const unionCount = new Set([...leftTokens, ...rightTokens]).size;
+
+  if (unionCount === 0) {
+    return 0;
+  }
+
+  return overlapCount / unionCount;
+}
+
+function findPotentialDuplicates({ payload, locationsRepository, wifiDetailsRepository, votesRepository }) {
+  return hydrateLocations(
+    locationsRepository.listActive(),
+    wifiDetailsRepository,
+    votesRepository
+  )
+    .map((location) => {
+      const distance = distanceMeters(payload.lat, payload.lng, location.lat, location.lng);
+      const nameSimilarity = calculateNameSimilarity(payload.name, location.name);
+
+      return {
+        location,
+        distance,
+        nameSimilarity
+      };
+    })
+    .filter(
+      ({ distance, nameSimilarity }) =>
+        distance <= DUPLICATE_DISTANCE_THRESHOLD_METERS &&
+        nameSimilarity >= DUPLICATE_NAME_SIMILARITY_THRESHOLD
+    )
+    .sort((left, right) => left.distance - right.distance || right.nameSimilarity - left.nameSimilarity)
+    .map(({ location, distance, nameSimilarity }) => ({
+      ...toLocationSummary(location, distance),
+      name_similarity: Number(nameSimilarity.toFixed(2))
+    }));
 }
 
 export function createLocationService({
@@ -139,10 +211,27 @@ export function createLocationService({
       return hydrateLocations([location], wifiDetailsRepository, votesRepository)[0];
     },
 
-    createLocation(payload) {
+    createLocation(payload, { ignoreDuplicateWarning = false } = {}) {
+      const potentialDuplicates = findPotentialDuplicates({
+        payload,
+        locationsRepository,
+        wifiDetailsRepository,
+        votesRepository
+      });
+
+      if (!ignoreDuplicateWarning && potentialDuplicates.length > 0) {
+        return {
+          location: null,
+          duplicates: potentialDuplicates
+        };
+      }
+
       return {
-        ...locationsRepository.create(payload),
-        ...summarizeLocation([])
+        location: {
+          ...locationsRepository.create(payload),
+          ...summarizeLocation([])
+        },
+        duplicates: []
       };
     }
   };

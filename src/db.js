@@ -51,8 +51,8 @@ export function createStore({ dbPath = "data/wifinder.sqlite" } = {}) {
       return locationService.getLocationById(id);
     },
 
-    createLocation(payload) {
-      return locationService.createLocation(payload);
+    createLocation(payload, options) {
+      return locationService.createLocation(payload, options);
     },
 
     createWifiDetail(locationId, payload) {
