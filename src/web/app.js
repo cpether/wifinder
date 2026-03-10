@@ -56,6 +56,47 @@
     }
   };
 
+  /* ═══════ Theme Toggle ═══════ */
+  const themeToggle = document.getElementById("theme-toggle");
+  const sunIcon = document.getElementById("theme-icon-sun");
+  const moonIcon = document.getElementById("theme-icon-moon");
+
+  function getStoredTheme() {
+    try {
+      return window.localStorage && window.localStorage.getItem("wifinder-theme");
+    } catch {
+      return null;
+    }
+  }
+
+  function applyTheme(theme) {
+    document.documentElement.setAttribute("data-theme", theme);
+    if (sunIcon && moonIcon) {
+      sunIcon.style.display = theme === "dark" ? "" : "none";
+      moonIcon.style.display = theme === "dark" ? "none" : "";
+    }
+    try {
+      if (window.localStorage) {
+        window.localStorage.setItem("wifinder-theme", theme);
+      }
+    } catch {
+      /* storage unavailable */
+    }
+  }
+
+  const storedTheme = getStoredTheme();
+  if (storedTheme === "dark" || storedTheme === "light") {
+    applyTheme(storedTheme);
+  }
+
+  if (themeToggle) {
+    themeToggle.addEventListener("click", function () {
+      const current = document.documentElement.getAttribute("data-theme") || "light";
+      applyTheme(current === "dark" ? "light" : "dark");
+    });
+  }
+
+  /* ═══════ App State ═══════ */
   const initialState = readInitialState();
   const state = {
     activeTab: "list",
@@ -137,6 +178,24 @@
       .replaceAll("<", "&lt;")
       .replaceAll(">", "&gt;")
       .replaceAll('"', "&quot;");
+  }
+
+  function confidenceColor(confidence) {
+    if (confidence >= 70) return "var(--success, #22c55e)";
+    if (confidence >= 40) return "var(--warning, #eab308)";
+    return "var(--danger, #ef4444)";
+  }
+
+  function confidenceBars(confidence) {
+    const level = confidence >= 70 ? 3 : confidence >= 40 ? 2 : 1;
+    const color = confidenceColor(confidence);
+    const dim = "var(--border, rgba(59,130,246,0.12))";
+    return [1, 2, 3]
+      .map(
+        (i) =>
+          `<span style="display:inline-block;width:4px;border-radius:2px;height:${6 + i * 4}px;background:${i <= level ? color : dim};transition:background 0.3s"></span>`
+      )
+      .join("");
   }
 
   function applyStateToControls() {
@@ -291,8 +350,11 @@
     elements.list.innerHTML = state.locations
       .map(
         (location) => `<article class="location-card">
-          <div>
-            <h3>${escapeHtml(location.name)}</h3>
+          <div style="display:flex;align-items:start;justify-content:space-between;gap:0.5rem">
+            <div style="min-width:0">
+              <h3>${escapeHtml(location.name)}</h3>
+            </div>
+            <div style="display:flex;align-items:end;gap:3px;flex-shrink:0">${confidenceBars(location.wifi_confidence)}</div>
           </div>
           <div class="location-chip-row">
             <span class="chip">${escapeHtml(location.category)}</span>
@@ -436,10 +498,6 @@
   function syncMap() {
     const searchQuery = normalizeSearchQuery();
     const mode = getRequestMode();
-
-    if (state.activeTab !== "map") {
-      return;
-    }
 
     if (!config.googleMapsApiKey) {
       renderMapMessage("Set GOOGLE_MAPS_API_KEY to enable the live Google Map. List view remains fully functional.");
