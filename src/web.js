@@ -168,7 +168,6 @@ function renderAppHtml(config) {
             <p class="eyebrow">Contribute</p>
             <h2 id="add-location-heading" class="contribute-title">Add a new Wi-Fi venue</h2>
           </div>
-          <button class="btn btn-ghost btn-sm" id="add-location-use-center" type="button">Use current area</button>
         </div>
         <p class="contribute-copy">Add a venue in under a minute. New locations publish immediately after duplicate review.</p>
         <form class="add-location-form" id="add-location-form">
@@ -180,16 +179,7 @@ function renderAppHtml(config) {
             <span class="manual-label-text">Category</span>
             <input class="input-field" id="add-location-category" name="category" autocomplete="off" maxlength="60" placeholder="cafe, library, coworking" required>
           </label>
-          <div class="add-location-coordinates">
-            <label class="add-location-field" for="add-location-lat">
-              <span class="manual-label-text">Latitude</span>
-              <input class="input-field" id="add-location-lat" name="lat" inputmode="decimal" placeholder="51.5072" required>
-            </label>
-            <label class="add-location-field" for="add-location-lng">
-              <span class="manual-label-text">Longitude</span>
-              <input class="input-field" id="add-location-lng" name="lng" inputmode="decimal" placeholder="-0.1276" required>
-            </label>
-          </div>
+          <div class="form-feedback" id="add-location-location-summary" aria-live="polite"></div>
           <label class="add-location-field" for="add-location-address">
             <span class="manual-label-text">Address (optional)</span>
             <input class="input-field" id="add-location-address" name="address" autocomplete="street-address" maxlength="220" placeholder="221B Baker Street, London">
@@ -210,22 +200,6 @@ function renderAppHtml(config) {
           <button class="btn btn-primary" id="add-location-submit" type="submit">Add venue</button>
         </form>
       </section>
-
-      <!-- ══════ MANUAL COORDINATES (collapsible) ══════ -->
-      <details class="manual-details">
-        <summary class="manual-summary">Enter coordinates manually</summary>
-        <form class="manual-form" id="manual-location-form">
-          <label>
-            <span class="manual-label-text">Latitude</span>
-            <input class="input-field" id="manual-lat" inputmode="decimal" name="lat" placeholder="51.5072" required>
-          </label>
-          <label>
-            <span class="manual-label-text">Longitude</span>
-            <input class="input-field" id="manual-lng" inputmode="decimal" name="lng" placeholder="-0.1276" required>
-          </label>
-          <button class="btn btn-primary btn-sm" type="submit">Go</button>
-        </form>
-      </details>
 
       <!-- ══════ CTA ══════ -->
       <section class="cta-card">

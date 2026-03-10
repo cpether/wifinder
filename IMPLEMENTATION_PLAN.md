@@ -32,6 +32,7 @@
 - 2026-03-10: Confirmed the earliest Milestone 4 gap is still the add-location contribution flow: the browser shell has no venue form, the server does not perform duplicate warnings, and the browser currently drops `x-device-token` between requests, which weakens no-auth abuse controls for upcoming contribution features.
 - 2026-03-10: Milestone 4 moved forward after shipping the browser add-location form, server-backed duplicate warnings with submit-anyway support, immediate post-submit listing feedback, and browser persistence for `x-device-token`.
 - 2026-03-10: Fixed an additional browser-shell bug uncovered during this increment: empty URLs were being parsed as a `(0,0)` search center because `Number(null)` was treated as `0`, which triggered a bogus nearby request on first load.
+- 2026-03-10: Follow-up UX adjustment: raw latitude/longitude entry was removed from the browser UI. Until address autocomplete and map pin placement ship, add-location now reuses the currently selected discovery area as its hidden location source.
 - 2026-03-10: The next unblocked item in delivery order remains Milestone 4 address autocomplete and map pin placement, which can now layer onto the live add-location form instead of starting from scratch.
 
 ## Increment Notes (2026-02-20)

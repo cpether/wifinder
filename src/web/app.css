@@ -707,17 +707,6 @@ button, input, select { font: inherit; }
   gap: 0.25rem;
 }
 
-.add-location-coordinates {
-  display: grid;
-  gap: 0.75rem;
-}
-
-@media (min-width: 40rem) {
-  .add-location-coordinates {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
 .form-feedback {
   padding: 0.8rem 0.9rem;
   border-radius: var(--radius-lg);

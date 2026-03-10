@@ -39,9 +39,6 @@
   const elements = {
     useLocation: document.getElementById("use-location"),
     useFallback: document.getElementById("use-fallback"),
-    manualForm: document.getElementById("manual-location-form"),
-    manualLat: document.getElementById("manual-lat"),
-    manualLng: document.getElementById("manual-lng"),
     searchInput: document.getElementById("search-input"),
     categoryInput: document.getElementById("category-input"),
     radiusSelect: document.getElementById("radius-select"),
@@ -49,11 +46,9 @@
     addLocationForm: document.getElementById("add-location-form"),
     addLocationName: document.getElementById("add-location-name"),
     addLocationCategory: document.getElementById("add-location-category"),
-    addLocationLat: document.getElementById("add-location-lat"),
-    addLocationLng: document.getElementById("add-location-lng"),
+    addLocationLocationSummary: document.getElementById("add-location-location-summary"),
     addLocationAddress: document.getElementById("add-location-address"),
     addLocationNotes: document.getElementById("add-location-notes"),
-    addLocationUseCenter: document.getElementById("add-location-use-center"),
     addLocationFeedback: document.getElementById("add-location-feedback"),
     addLocationDuplicateWarning: document.getElementById("add-location-duplicate-warning"),
     addLocationDuplicateSummary: document.getElementById("add-location-duplicate-summary"),
@@ -229,13 +224,6 @@
     elements.categoryInput.value = state.filters.category;
     elements.radiusSelect.value = String(state.filters.radius);
     elements.verifiedOnly.checked = state.filters.verifiedOnly;
-
-    if (state.center && state.centerSource === "deeplink") {
-      elements.manualLat.value = String(state.center.lat);
-      elements.manualLng.value = String(state.center.lng);
-    }
-
-    syncAddLocationCoordinates();
   }
 
   function getStoredDeviceToken() {
@@ -398,7 +386,7 @@
     if (!state.center && !hasSearchCriteria() && !state.loading) {
       elements.resultsSummary.textContent = "No search run yet.";
       elements.list.innerHTML =
-        '<article class="empty-state">Use your location, Central London, manual coordinates, or the search bar to start discovery.</article>';
+        '<article class="empty-state">Use your location, Central London, or the search bar to start discovery.</article>';
       return;
     }
 
@@ -618,18 +606,8 @@
     return hasSearchCriteria() ? "search" : "nearby";
   }
 
-  function syncAddLocationCoordinates(force = false) {
-    if (!state.center) {
-      return;
-    }
-
-    if (force || !elements.addLocationLat.value.trim()) {
-      elements.addLocationLat.value = String(state.center.lat);
-    }
-
-    if (force || !elements.addLocationLng.value.trim()) {
-      elements.addLocationLng.value = String(state.center.lng);
-    }
+  function getAddLocationCenter() {
+    return state.center;
   }
 
   function resetAddLocationFeedback() {
@@ -643,11 +621,12 @@
   }
 
   function renderAddLocation() {
+    const addLocationCenter = getAddLocationCenter();
     const feedback = state.addLocation.submitting
       ? "Checking for duplicates and saving your venue..."
       : state.addLocation.error ??
         state.addLocation.success ??
-        "Use the current area or enter precise coordinates for the new venue.";
+        "Choose a discovery area first, then add the venue details.";
     const feedbackState = state.addLocation.submitting
       ? "pending"
       : state.addLocation.error
@@ -658,8 +637,11 @@
 
     elements.addLocationFeedback.textContent = feedback;
     elements.addLocationFeedback.setAttribute("data-state", feedbackState);
+    elements.addLocationLocationSummary.textContent = addLocationCenter
+      ? `Venue location will use ${state.centerLabel || "your selected area"}.`
+      : "Pick your location or Central London above before submitting a new venue.";
+    elements.addLocationLocationSummary.setAttribute("data-state", addLocationCenter ? "success" : "idle");
     elements.addLocationSubmit.disabled = state.addLocation.submitting;
-    elements.addLocationUseCenter.disabled = state.addLocation.submitting;
     elements.addLocationSubmitAnyway.disabled =
       state.addLocation.submitting || !state.addLocation.pendingPayload;
     elements.addLocationCancelWarning.disabled = state.addLocation.submitting;
@@ -688,10 +670,9 @@
   }
 
   function buildAddLocationPayload({ ignoreDuplicateWarning = false } = {}) {
+    const addLocationCenter = getAddLocationCenter();
     const name = elements.addLocationName.value.trim();
     const category = elements.addLocationCategory.value.trim();
-    const lat = Number(elements.addLocationLat.value);
-    const lng = Number(elements.addLocationLng.value);
     const address = elements.addLocationAddress.value.trim();
     const notes = elements.addLocationNotes.value.trim();
 
@@ -703,15 +684,15 @@
       throw new Error("Enter a category before submitting.");
     }
 
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-      throw new Error("Enter numeric latitude and longitude values for the venue.");
+    if (!addLocationCenter) {
+      throw new Error("Choose your location or Central London first so we can place the venue.");
     }
 
     const payload = {
       name,
       category,
-      lat,
-      lng
+      lat: addLocationCenter.lat,
+      lng: addLocationCenter.lng
     };
 
     if (address) {
@@ -745,7 +726,6 @@
     elements.addLocationCategory.value = "";
     elements.addLocationAddress.value = "";
     elements.addLocationNotes.value = "";
-    syncAddLocationCoordinates(true);
     applyStateToControls();
     syncUrl();
     renderStatus();
@@ -859,7 +839,6 @@
       }
 
       state.locations = Array.isArray(payload.locations) ? payload.locations : [];
-      syncAddLocationCoordinates();
     } catch (error) {
       if (requestId !== requestSequence) {
         return;
@@ -882,7 +861,7 @@
   function requestCurrentLocation() {
     if (!navigator.geolocation) {
       state.permissionState = "unavailable";
-      state.error = "Geolocation is not available in this browser. Try the fallback center or manual coordinates.";
+      state.error = "Geolocation is not available in this browser. Try the fallback center instead.";
       renderStatus();
       return;
     }
@@ -908,7 +887,7 @@
         state.permissionState = error.code === 1 ? "denied" : "error";
         state.error =
           error.code === 1
-            ? "Location permission was denied. Use the fallback center or manual coordinates instead."
+            ? "Location permission was denied. Use the fallback center instead."
             : "Your location could not be determined. Try again or use the fallback center.";
         renderStatus();
         renderList();
@@ -920,21 +899,6 @@
         maximumAge: 60000
       }
     );
-  }
-
-  function submitManualLocation(event) {
-    event.preventDefault();
-
-    const lat = Number(elements.manualLat.value);
-    const lng = Number(elements.manualLng.value);
-
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-      state.error = "Enter numeric latitude and longitude values.";
-      renderStatus();
-      return;
-    }
-
-    fetchLocations({ lat, lng }, "your chosen coordinates", "manual");
   }
 
   function clearSearchTimer() {
@@ -992,24 +956,10 @@
       "fallback"
     )
   );
-  elements.manualForm.addEventListener("submit", submitManualLocation);
   elements.searchInput.addEventListener("input", scheduleTypedSearch);
   elements.categoryInput.addEventListener("input", scheduleTypedSearch);
   elements.radiusSelect.addEventListener("change", applyDiscreteFilters);
   elements.verifiedOnly.addEventListener("change", applyDiscreteFilters);
-  elements.addLocationUseCenter.addEventListener("click", () => {
-    if (state.center) {
-      syncAddLocationCoordinates(true);
-      resetAddLocationFeedback();
-    } else {
-      elements.addLocationLat.value = String(config.fallbackCenter.lat);
-      elements.addLocationLng.value = String(config.fallbackCenter.lng);
-      state.addLocation.success = `No area selected yet. Using ${config.fallbackCenter.label} coordinates.`;
-      state.addLocation.error = null;
-    }
-    clearDuplicateWarning();
-    renderAddLocation();
-  });
   elements.addLocationForm.addEventListener("submit", (event) => {
     event.preventDefault();
     submitAddLocation();
@@ -1024,8 +974,6 @@
   for (const field of [
     elements.addLocationName,
     elements.addLocationCategory,
-    elements.addLocationLat,
-    elements.addLocationLng,
     elements.addLocationAddress,
     elements.addLocationNotes
   ]) {
