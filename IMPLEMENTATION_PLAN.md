@@ -22,6 +22,9 @@
 - 2026-03-09: `npm test` in this checkout initially failed before product assertions because the declared `better-sqlite3` dependency had not been installed locally; `AGENTS.md` now calls out `npm install` as a fresh-checkout prerequisite.
 - 2026-03-09: Milestone 3 search-bar work moved forward after wiring the browser shell to the existing search API with debounced requests and focused client/server coverage.
 - 2026-03-09: The next unblocked item in delivery order is Milestone 3 UI filters for category, radius, and recently verified state, which can now build on the shared search shell.
+- 2026-03-10: Confirmed `GET /api/locations/nearby` already accepts `category` and `radius`, and `GET /api/locations/search` already accepts `category`, `radius`, and `verified`; the remaining gap for the earliest Milestone 3 task is browser UI wiring and focused coverage for those controls.
+- 2026-03-10: Milestone 3 UI filters moved to `Complete` after adding browser controls for category, radius, and recently verified state on top of the existing nearby/search API, with client coverage for endpoint selection and query params.
+- 2026-03-10: The next unblocked item in delivery order is Milestone 3 deep link support for search and filter state so the new discovery controls persist in the URL.
 
 ## Increment Notes (2026-02-20)
 - Why this implementation matters:
@@ -54,6 +57,14 @@
 - Why these tests matter:
   - Web-shell assertions lock in the new search bootstrap wiring so future frontend iterations do not silently drop the search surface.
   - The client-side debounce test protects the exact behavior this increment adds: only the final paused query is sent, and it keeps the current map center when searching around a chosen area.
+
+## Increment Notes (2026-03-10, Milestone 3 Filters)
+- Why this implementation matters:
+  - Users can now narrow nearby discovery by category and distance without leaving the main shell, which closes the biggest remaining UX gap in the Milestone 3 browsing flow.
+  - The recently-verified toggle reuses the existing search API path so freshness filtering works against the same confidence data already exposed by the backend instead of inventing a second client-side source of truth.
+- Why these tests matter:
+  - The new client test protects the exact request contract this increment depends on: nearby requests carry category/radius filters, while verified-only browsing switches to the search endpoint that actually supports freshness filtering.
+  - Keeping the full suite green confirms the filter UI did not regress the existing nearby/search, persistence, or reporting flows that already depended on the same browser shell and server routes.
 
 ## 1. Delivery Strategy
 Ship thin vertical slices in this order:
@@ -140,7 +151,7 @@ Tasks:
 - [x] Implement query parser and search ranking.
 - [x] Add search bar with debounce.
 - [x] Add API support for filters (category, radius, recently verified).
-- [ ] Add UI filters (category, radius, recently verified).
+- [x] Add UI filters (category, radius, recently verified).
 - [ ] Add deep link support for search/filter state.
 - [ ] Add API and UI tests for search edge cases.
 

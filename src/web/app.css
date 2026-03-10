@@ -112,7 +112,10 @@ input {
 .tab-button:hover,
 .tab-button:focus-visible,
 .manual-entry input:focus-visible,
-.search-input:focus-visible {
+.search-input:focus-visible,
+.filter-input:focus-visible,
+.filter-clear:focus-visible,
+.filter-toggle:focus-within {
   outline: 2px solid var(--rose);
   outline-offset: 2px;
 }
@@ -210,6 +213,72 @@ input {
 .search-note {
   margin: 0;
   font-size: 0.9rem;
+}
+
+.filter-shell {
+  margin-top: 0.9rem;
+  padding: 0.95rem 1rem;
+  border: 1px solid rgba(23, 33, 33, 0.08);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.68);
+  display: grid;
+  gap: 0.8rem;
+}
+
+.filter-header {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.filter-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.filter-field {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--teal-deep);
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.filter-input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  padding: 0.8rem 0.9rem;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.filter-toggle {
+  display: flex;
+  gap: 0.65rem;
+  align-items: center;
+  padding: 0.85rem 0.95rem;
+  border-radius: 0.9rem;
+  border: 1px solid rgba(27, 127, 121, 0.16);
+  background: rgba(27, 127, 121, 0.08);
+  color: var(--teal-deep);
+  font-weight: 700;
+}
+
+.filter-toggle input {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+}
+
+.filter-clear {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--rose);
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
 }
 
 .status-banner {
@@ -326,6 +395,11 @@ input {
 
   .manual-entry {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: end;
+  }
+
+  .filter-grid {
+    grid-template-columns: minmax(0, 1.4fr) minmax(12rem, 1fr) minmax(0, 1fr);
     align-items: end;
   }
 }

@@ -13,6 +13,11 @@
     manualLat: document.getElementById("manual-lat"),
     manualLng: document.getElementById("manual-lng"),
     searchInput: document.getElementById("search-input"),
+    filterForm: document.getElementById("filter-form"),
+    filterCategory: document.getElementById("filter-category"),
+    filterRadius: document.getElementById("filter-radius"),
+    filterVerified: document.getElementById("filter-verified"),
+    clearFilters: document.getElementById("clear-filters"),
     statusBanner: document.getElementById("status-banner"),
     resultsSummary: document.getElementById("results-summary"),
     list: document.getElementById("location-list"),
@@ -32,6 +37,11 @@
     center: null,
     centerLabel: null,
     query: "",
+    filters: {
+      category: "",
+      radius: config.defaultRadius,
+      verified: false
+    },
     locations: [],
     error: null,
     requestSequence: 0
@@ -68,6 +78,14 @@
     }).format(new Date(value));
   }
 
+  function formatRadiusLabel(radiusMeters) {
+    if (radiusMeters < 1000) {
+      return `${radiusMeters} m`;
+    }
+
+    return `${radiusMeters / 1000} km`;
+  }
+
   function escapeHtml(value) {
     return String(value)
       .replaceAll("&", "&amp;")
@@ -82,6 +100,33 @@
 
   function hasActiveSearch() {
     return getActiveQuery().length > 0;
+  }
+
+  function normalizeFilters(filters) {
+    const radius = Number(filters?.radius);
+    return {
+      category: String(filters?.category ?? "").trim(),
+      radius: Number.isFinite(radius) ? radius : config.defaultRadius,
+      verified: Boolean(filters?.verified)
+    };
+  }
+
+  function readFiltersFromInputs() {
+    return normalizeFilters({
+      category: elements.filterCategory.value,
+      radius: elements.filterRadius.value,
+      verified: elements.filterVerified.checked
+    });
+  }
+
+  function resetFilterInputs() {
+    elements.filterCategory.value = "";
+    elements.filterRadius.value = String(config.defaultRadius);
+    elements.filterVerified.checked = false;
+  }
+
+  function shouldUseSearchEndpoint(query, filters) {
+    return String(query ?? "").trim().length > 0 || filters.verified;
   }
 
   function clearScheduledSearch() {
@@ -137,7 +182,7 @@
         ? state.centerLabel
           ? `No venues matched "${activeQuery}" around ${state.centerLabel}.`
           : `No venues matched "${activeQuery}".`
-        : `No venues found within ${config.defaultRadius / 1000} km of ${state.centerLabel}.`;
+        : `No venues found within ${formatRadiusLabel(state.filters.radius)} of ${state.centerLabel}.`;
       return;
     }
 
@@ -172,7 +217,7 @@
       elements.resultsSummary.textContent = searchActive ? "No search results found." : "No nearby venues found.";
       elements.list.innerHTML = searchActive
         ? `<article class="empty-state">Try another place name, street, postcode, or area.</article>`
-        : `<article class="empty-state">Try another area or widen the search in a future increment.</article>`;
+        : `<article class="empty-state">Try another area or widen the radius filter.</article>`;
       return;
     }
 
@@ -180,7 +225,7 @@
       ? state.centerLabel
         ? `${state.locations.length} search result${state.locations.length === 1 ? "" : "s"} around ${state.centerLabel}.`
         : `${state.locations.length} search result${state.locations.length === 1 ? "" : "s"}.`
-      : `${state.locations.length} venue${state.locations.length === 1 ? "" : "s"} within ${config.defaultRadius / 1000} km.`;
+      : `${state.locations.length} venue${state.locations.length === 1 ? "" : "s"} within ${formatRadiusLabel(state.filters.radius)}.`;
     elements.list.innerHTML = state.locations
       .map(
         (location) => `<article class="location-card">
@@ -370,13 +415,20 @@
       });
   }
 
-  async function fetchLocations({ center = state.center, label = state.centerLabel, query = state.query } = {}) {
+  async function fetchLocations({
+    center = state.center,
+    label = state.centerLabel,
+    query = state.query,
+    filters = state.filters
+  } = {}) {
     const normalizedQuery = String(query ?? "").trim();
+    const normalizedFilters = normalizeFilters(filters);
 
     if (!center && normalizedQuery.length === 0) {
       state.center = null;
       state.centerLabel = null;
       state.query = "";
+      state.filters = normalizedFilters;
       state.locations = [];
       state.error = null;
       state.loading = false;
@@ -393,6 +445,7 @@
     state.center = center;
     state.centerLabel = label;
     state.query = normalizedQuery;
+    state.filters = normalizedFilters;
     renderStatus();
     renderList();
     syncMap();
@@ -402,13 +455,21 @@
       if (normalizedQuery) {
         params.set("q", normalizedQuery);
       }
+      if (normalizedFilters.category) {
+        params.set("category", normalizedFilters.category);
+      }
       if (center) {
         params.set("lat", String(center.lat));
         params.set("lng", String(center.lng));
-        params.set("radius", String(config.defaultRadius));
+        params.set("radius", String(normalizedFilters.radius));
+      }
+      if (normalizedFilters.verified) {
+        params.set("verified", "true");
       }
 
-      const endpoint = normalizedQuery ? config.searchEndpoint : config.nearbyEndpoint;
+      const endpoint = shouldUseSearchEndpoint(normalizedQuery, normalizedFilters)
+        ? config.searchEndpoint
+        : config.nearbyEndpoint;
       const response = await fetch(`${endpoint}?${params.toString()}`);
       const payload = await response.json();
 
@@ -442,7 +503,11 @@
 
   function fetchNearby(center, label) {
     clearScheduledSearch();
-    return fetchLocations({ center, label });
+    return fetchLocations({
+      center,
+      label,
+      filters: readFiltersFromInputs()
+    });
   }
 
   function scheduleSearch() {
@@ -461,9 +526,32 @@
       fetchLocations({
         center: state.center,
         label: state.centerLabel,
-        query: elements.searchInput.value
+        query: elements.searchInput.value,
+        filters: readFiltersFromInputs()
       });
     }, SEARCH_DEBOUNCE_MS);
+  }
+
+  function applyFilters(event) {
+    event.preventDefault();
+    clearScheduledSearch();
+    fetchLocations({
+      center: state.center,
+      label: state.centerLabel,
+      query: elements.searchInput.value,
+      filters: readFiltersFromInputs()
+    });
+  }
+
+  function clearFilters() {
+    resetFilterInputs();
+    clearScheduledSearch();
+    fetchLocations({
+      center: state.center,
+      label: state.centerLabel,
+      query: elements.searchInput.value,
+      filters: readFiltersFromInputs()
+    });
   }
 
   function requestCurrentLocation() {
@@ -535,10 +623,16 @@
   );
   elements.manualForm.addEventListener("submit", submitManualLocation);
   elements.searchInput.addEventListener("input", scheduleSearch);
+  elements.filterForm.addEventListener("submit", applyFilters);
+  elements.filterCategory.addEventListener("change", applyFilters);
+  elements.filterRadius.addEventListener("change", applyFilters);
+  elements.filterVerified.addEventListener("change", applyFilters);
+  elements.clearFilters.addEventListener("click", clearFilters);
   for (const button of elements.tabButtons) {
     button.addEventListener("click", () => setActiveTab(button.dataset.tab));
   }
 
+  resetFilterInputs();
   renderStatus();
   renderList();
 })();

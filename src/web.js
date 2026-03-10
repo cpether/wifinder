@@ -91,6 +91,50 @@ function renderAppHtml(config) {
           <p class="search-note">Results update automatically when you pause typing.</p>
         </div>
 
+        <form class="filter-shell" id="filter-form" aria-labelledby="filter-label">
+          <div class="filter-header">
+            <p class="search-label" id="filter-label">Refine results</p>
+            <button class="filter-clear" id="clear-filters" type="button">Clear filters</button>
+          </div>
+          <div class="filter-grid">
+            <label class="filter-field" for="filter-category">
+              Category
+              <input
+                class="filter-input"
+                id="filter-category"
+                name="category"
+                type="text"
+                list="category-suggestions"
+                placeholder="cafe, coworking, library"
+                autocomplete="off"
+                spellcheck="false"
+              >
+            </label>
+            <label class="filter-field" for="filter-radius">
+              Radius
+              <select class="filter-input" id="filter-radius" name="radius">
+                <option value="500">0.5 km</option>
+                <option value="1000">1 km</option>
+                <option value="2000" selected>2 km</option>
+                <option value="5000">5 km</option>
+                <option value="10000">10 km</option>
+              </select>
+            </label>
+            <label class="filter-toggle" for="filter-verified">
+              <input id="filter-verified" name="verified" type="checkbox">
+              <span>Recently verified only</span>
+            </label>
+          </div>
+          <datalist id="category-suggestions">
+            <option value="cafe"></option>
+            <option value="coworking"></option>
+            <option value="library"></option>
+            <option value="hotel"></option>
+            <option value="pub"></option>
+            <option value="restaurant"></option>
+          </datalist>
+        </form>
+
         <div class="status-banner" id="status-banner" aria-live="polite">Choose a location to load nearby venues.</div>
 
         <section class="panel panel-list is-active" id="panel-list" role="tabpanel" aria-labelledby="tab-list">
