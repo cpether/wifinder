@@ -33,7 +33,8 @@
 - 2026-03-10: Milestone 4 moved forward after shipping the browser add-location form, server-backed duplicate warnings with submit-anyway support, immediate post-submit listing feedback, and browser persistence for `x-device-token`.
 - 2026-03-10: Fixed an additional browser-shell bug uncovered during this increment: empty URLs were being parsed as a `(0,0)` search center because `Number(null)` was treated as `0`, which triggered a bogus nearby request on first load.
 - 2026-03-10: Follow-up UX adjustment: raw latitude/longitude entry was removed from the browser UI. Until address autocomplete and map pin placement ship, add-location now reuses the currently selected discovery area as its hidden location source.
-- 2026-03-10: The next unblocked item in delivery order remains Milestone 4 address autocomplete and map pin placement, which can now layer onto the live add-location form instead of starting from scratch.
+- 2026-03-10: Milestone 4 moved to `Complete` after wiring Google Places-powered address autocomplete onto the add-location address field, adding explicit map-pin placement on the live map, and keeping the duplicate-warning plus immediate-visibility flow intact.
+- 2026-03-10: The next unblocked item in delivery order is Milestone 5 user-facing work, starting with the add Wi-Fi detail form and location detail rendering on top of the existing `POST /locations/:id/wifi-details` endpoint.
 
 ## Increment Notes (2026-02-20)
 - Why this implementation matters:
@@ -80,9 +81,10 @@
   - Users can now contribute new venues from the browser shell instead of being blocked at the API boundary, which is the first real Milestone 4 product slice.
   - Duplicate warnings now come from the server using one source of truth for proximity and name similarity, while still allowing intentional submit-anyway behavior for edge cases.
   - Browser requests now retain the issued anonymous device token, which is required for no-auth abuse controls to behave consistently across contribution flows.
+  - Address autocomplete and map pin placement now complete the venue-location UX without exposing raw coordinates, which aligns the shipped UI with the product spec rather than a debug-only workflow.
 - Why these tests matter:
   - API coverage locks in the duplicate-warning contract so future work can safely build address autocomplete and map pin placement on the same create path.
-  - Browser-shell coverage protects the full contribution UX, including duplicate warnings, token reuse, and immediate listing feedback after a successful submission.
+  - Browser-shell coverage protects the full contribution UX, including duplicate warnings, token reuse, immediate listing feedback, Google Places address selection, and map pin placement.
 
 ## 1. Delivery Strategy
 Ship thin vertical slices in this order:
@@ -176,19 +178,19 @@ Tasks:
 Exit criteria:
 - [x] Search returns relevant results and filters persist in URL.
 
-## Milestone 4: Add New Location - Status: In Progress
+## Milestone 4: Add New Location - Status: Complete
 Goal: users can contribute new places with duplicate protection.
 
 Tasks:
 - [x] Build add-location form flow.
-- [ ] Integrate address autocomplete/map pin placement.
+- [x] Integrate address autocomplete/map pin placement.
 - [x] Implement duplicate detection checks.
 - [x] Implement `POST /locations` with validation and sanitization.
 - [x] Add post-submit confirmation and immediate listing display.
 - [x] Add abuse controls (cooldown + max daily submissions/IP).
 
 Exit criteria:
-- [ ] New location appears immediately and duplicate prompts work.
+- [x] New location appears immediately and duplicate prompts work.
 
 ## Milestone 5: Add Wi-Fi Detail - Status: In Progress
 Goal: users can add public Wi-Fi details per location.

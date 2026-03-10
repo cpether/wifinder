@@ -181,9 +181,13 @@ function renderAppHtml(config) {
           </label>
           <div class="form-feedback" id="add-location-location-summary" aria-live="polite"></div>
           <label class="add-location-field" for="add-location-address">
-            <span class="manual-label-text">Address (optional)</span>
-            <input class="input-field" id="add-location-address" name="address" autocomplete="street-address" maxlength="220" placeholder="221B Baker Street, London">
+            <span class="manual-label-text">Address or postcode</span>
+            <input class="input-field" id="add-location-address" name="address" autocomplete="street-address" maxlength="220" placeholder="Search or type an address">
           </label>
+          <div class="add-location-actions">
+            <button class="btn btn-ghost btn-sm" id="add-location-use-current" type="button">Use current area</button>
+            <button class="btn btn-ghost btn-sm" id="add-location-place-pin" type="button">Place pin on map</button>
+          </div>
           <label class="add-location-field" for="add-location-notes">
             <span class="manual-label-text">Notes (optional)</span>
             <textarea class="input-field input-field-textarea" id="add-location-notes" name="notes" maxlength="500" placeholder="Quiet upstairs tables near plugs."></textarea>

@@ -39,7 +39,117 @@ function createElement({ id = null, dataset = {} } = {}) {
   };
 }
 
-function createHarness({ search = "", fetchImpl } = {}) {
+function createGoogleMapsStub() {
+  const createdMaps = [];
+  const createdAutocompletes = [];
+
+  class FakeMap {
+    constructor(_element, options) {
+      this.center = options.center;
+      this.zoom = options.zoom;
+      this.listeners = new Map();
+      createdMaps.push(this);
+    }
+
+    addListener(event, handler) {
+      this.listeners.set(event, handler);
+    }
+
+    setCenter(center) {
+      this.center = center;
+    }
+
+    setZoom(zoom) {
+      this.zoom = zoom;
+    }
+
+    fitBounds() {}
+
+    trigger(event, payload) {
+      const handler = this.listeners.get(event);
+      if (handler) {
+        handler(payload);
+      }
+    }
+  }
+
+  class FakeMarker {
+    constructor(options) {
+      this.map = options.map;
+      this.position = options.position;
+      this.title = options.title;
+      this.icon = options.icon;
+      this.listeners = new Map();
+    }
+
+    setMap(map) {
+      this.map = map;
+    }
+
+    addListener(event, handler) {
+      this.listeners.set(event, handler);
+    }
+  }
+
+  class FakeInfoWindow {
+    setContent() {}
+
+    open() {}
+  }
+
+  class FakeLatLngBounds {
+    extend() {}
+  }
+
+  class FakeGeocoder {
+    geocode(_request, callback) {
+      callback([{ formatted_address: "Pinned venue address" }], "OK");
+    }
+  }
+
+  class FakeAutocomplete {
+    constructor(_element, _options) {
+      this.listeners = new Map();
+      this.place = null;
+      createdAutocompletes.push(this);
+    }
+
+    addListener(event, handler) {
+      this.listeners.set(event, handler);
+    }
+
+    getPlace() {
+      return this.place;
+    }
+
+    triggerPlace(place) {
+      this.place = place;
+      const handler = this.listeners.get("place_changed");
+      if (handler) {
+        handler();
+      }
+    }
+  }
+
+  return {
+    google: {
+      maps: {
+        Map: FakeMap,
+        Marker: FakeMarker,
+        InfoWindow: FakeInfoWindow,
+        LatLngBounds: FakeLatLngBounds,
+        Geocoder: FakeGeocoder,
+        places: {
+          Autocomplete: FakeAutocomplete
+        }
+      }
+    },
+    createdMaps,
+    createdAutocompletes
+  };
+}
+
+function createHarness({ search = "", fetchImpl, bootstrapOverrides = {}, google = undefined } = {}) {
   const tabList = createElement({ id: "tab-list", dataset: { tab: "list" } });
   const tabMap = createElement({ id: "tab-map", dataset: { tab: "map" } });
 
@@ -56,6 +166,8 @@ function createHarness({ search = "", fetchImpl } = {}) {
     "add-location-category": createElement({ id: "add-location-category" }),
     "add-location-location-summary": createElement({ id: "add-location-location-summary" }),
     "add-location-address": createElement({ id: "add-location-address" }),
+    "add-location-use-current": createElement({ id: "add-location-use-current" }),
+    "add-location-place-pin": createElement({ id: "add-location-place-pin" }),
     "add-location-notes": createElement({ id: "add-location-notes" }),
     "add-location-feedback": createElement({ id: "add-location-feedback" }),
     "add-location-duplicate-warning": createElement({ id: "add-location-duplicate-warning" }),
@@ -85,7 +197,8 @@ function createHarness({ search = "", fetchImpl } = {}) {
       lat: 51.5072,
       lng: -0.1276,
       label: "Central London"
-    }
+    },
+    ...bootstrapOverrides
   });
 
   const fetchCalls = [];
@@ -135,10 +248,15 @@ function createHarness({ search = "", fetchImpl } = {}) {
     }
   };
 
+  if (google) {
+    window.google = google;
+  }
+
   const context = vm.createContext({
     window,
     document,
     navigator: {},
+    google,
     fetch: fetchImpl
       ? async (url, options) => {
           fetchCalls.push({ url, options });
@@ -302,4 +420,114 @@ test("web app submits a new location, surfaces duplicate warnings, and reuses th
   assert.equal(harness.elements["add-location-duplicate-warning"].hidden, true);
   assert.match(harness.elements["add-location-feedback"].textContent, /now live/);
   assert.match(harness.elements["location-list"].innerHTML, /Shoreditch Study Hall/);
+});
+
+test("web app uses address autocomplete to move the add-location pin and submit that location", async () => {
+  const googleMapsStub = createGoogleMapsStub();
+  let requestCount = 0;
+  const harness = createHarness({
+    search: "?lat=51.5072&lng=-0.1276&label=Central%20London",
+    google: googleMapsStub.google,
+    bootstrapOverrides: {
+      googleMapsApiKey: "test-key"
+    },
+    fetchImpl: async (_url, options) => {
+      requestCount += 1;
+      if (requestCount === 1) {
+        return {
+          ok: true,
+          status: 200,
+          headers: { get() { return null; } },
+          async json() {
+            return { locations: [] };
+          }
+        };
+      }
+
+      return {
+        ok: true,
+        status: 201,
+        headers: { get() { return "device-token-2"; } },
+        async json() {
+          return {
+            location: {
+              id: 14,
+              name: "Baker Street Lounge",
+              category: "cafe",
+              lat: 51.5237,
+              lng: -0.1585,
+              address: "221B Baker Street, London",
+              wifi_confidence: 0,
+              freshness_badge: "Unknown",
+              last_verified_at: null
+            }
+          };
+        }
+      };
+    }
+  });
+
+  await flushImmediate();
+  assert.equal(googleMapsStub.createdAutocompletes.length, 1);
+
+  googleMapsStub.createdAutocompletes[0].triggerPlace({
+    formatted_address: "221B Baker Street, London",
+    geometry: {
+      location: {
+        lat() {
+          return 51.5237;
+        },
+        lng() {
+          return -0.1585;
+        }
+      }
+    }
+  });
+
+  harness.elements["add-location-name"].value = "Baker Street Lounge";
+  harness.elements["add-location-category"].value = "cafe";
+  await flushImmediate();
+
+  assert.match(harness.elements["add-location-location-summary"].textContent, /221B Baker Street, London/);
+
+  harness.elements["add-location-form"].dispatch("submit");
+  await flushImmediate();
+
+  assert.equal(harness.fetchCalls.length, 2);
+  const createRequestBody = JSON.parse(harness.fetchCalls[1].options.body);
+  assert.equal(createRequestBody.lat, 51.5237);
+  assert.equal(createRequestBody.lng, -0.1585);
+  assert.equal(createRequestBody.address, "221B Baker Street, London");
+  assert.match(harness.elements["location-list"].innerHTML, /Baker Street Lounge/);
+});
+
+test("web app lets the user place a venue pin on the map", async () => {
+  const googleMapsStub = createGoogleMapsStub();
+  const harness = createHarness({
+    search: "?lat=51.5072&lng=-0.1276&label=Central%20London",
+    google: googleMapsStub.google,
+    bootstrapOverrides: {
+      googleMapsApiKey: "test-key"
+    }
+  });
+
+  await flushImmediate();
+  assert.equal(googleMapsStub.createdMaps.length, 1);
+
+  harness.elements["add-location-place-pin"].dispatch("click");
+  googleMapsStub.createdMaps[0].trigger("click", {
+    latLng: {
+      lat() {
+        return 51.5014;
+      },
+      lng() {
+        return -0.1419;
+      }
+    }
+  });
+  await flushImmediate();
+
+  assert.match(harness.elements["add-location-location-summary"].textContent, /Pinned venue address/);
+  assert.equal(harness.elements["add-location-address"].value, "Pinned venue address");
+  assert.equal(harness.elements["add-location-feedback"].textContent.includes("Pin placement is active"), false);
 });

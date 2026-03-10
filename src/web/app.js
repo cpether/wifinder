@@ -48,6 +48,8 @@
     addLocationCategory: document.getElementById("add-location-category"),
     addLocationLocationSummary: document.getElementById("add-location-location-summary"),
     addLocationAddress: document.getElementById("add-location-address"),
+    addLocationUseCurrent: document.getElementById("add-location-use-current"),
+    addLocationPlacePin: document.getElementById("add-location-place-pin"),
     addLocationNotes: document.getElementById("add-location-notes"),
     addLocationFeedback: document.getElementById("add-location-feedback"),
     addLocationDuplicateWarning: document.getElementById("add-location-duplicate-warning"),
@@ -131,18 +133,26 @@
       error: null,
       success: null,
       duplicates: [],
-      pendingPayload: null
+      pendingPayload: null,
+      selectedLocation: initialState.center,
+      selectedLabel: initialState.centerLabel,
+      selectedSource: initialState.center ? "browse-center" : null,
+      pinPlacementMode: false
     }
   };
 
   let mapPromise = null;
   let map = null;
   let userMarker = null;
+  let addLocationMarker = null;
   let markers = [];
   let infoWindow = null;
   let searchTimer = null;
   let requestSequence = 0;
   let deviceToken = getStoredDeviceToken();
+  let addLocationAutocomplete = null;
+  let addLocationGeocoder = null;
+  let mapClickListenerAttached = false;
 
   function normalizeSearchQuery() {
     return state.searchQuery.trim();
@@ -447,6 +457,14 @@
     markers = [];
   }
 
+  function clearAddLocationMarker() {
+    if (!addLocationMarker) {
+      return;
+    }
+    addLocationMarker.setMap(null);
+    addLocationMarker = null;
+  }
+
   function createMarker(position, title, iconUrl) {
     return new google.maps.Marker({
       map,
@@ -468,8 +486,18 @@
       userMarker = null;
     }
 
+    clearAddLocationMarker();
+
     if (state.center) {
       userMarker = createMarker(state.center, "You are here", "https://maps.google.com/mapfiles/ms/icons/blue-dot.png");
+    }
+
+    if (state.addLocation.selectedLocation) {
+      addLocationMarker = createMarker(
+        state.addLocation.selectedLocation,
+        state.addLocation.selectedLabel || "New venue pin",
+        "https://maps.google.com/mapfiles/ms/icons/green-dot.png"
+      );
     }
 
     for (const location of state.locations) {
@@ -547,7 +575,7 @@
       };
 
       const script = document.createElement("script");
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(config.googleMapsApiKey)}&callback=${callbackName}`;
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(config.googleMapsApiKey)}&libraries=places&callback=${callbackName}`;
       script.async = true;
       script.onerror = () => {
         reject(new Error("Google Maps failed to load."));
@@ -582,10 +610,14 @@
           });
         }
 
+        ensureAddLocationMapTools();
+
         updateMapMarkers();
         fitMapBounds();
 
-        if (state.locations.length === 0 && !state.center && !hasSearchCriteria()) {
+        if (state.addLocation.pinPlacementMode) {
+          elements.mapOverlay.hidden = true;
+        } else if (state.locations.length === 0 && !state.center && !hasSearchCriteria()) {
           renderMapMessage("Use your location, the fallback center, or the search bar to place venue pins.");
         } else if (state.locations.length === 0) {
           renderMapMessage(
@@ -607,7 +639,122 @@
   }
 
   function getAddLocationCenter() {
-    return state.center;
+    return state.addLocation.selectedLocation;
+  }
+
+  function setAddLocationSelection(location, label, source) {
+    state.addLocation.selectedLocation = location;
+    state.addLocation.selectedLabel = label;
+    state.addLocation.selectedSource = source;
+    state.addLocation.pinPlacementMode = false;
+  }
+
+  function syncAddLocationToBrowseCenter() {
+    state.addLocation.pinPlacementMode = false;
+    const shouldTrackBrowseCenter =
+      !state.addLocation.selectedLocation || state.addLocation.selectedSource === "browse-center";
+
+    if (!shouldTrackBrowseCenter) {
+      return;
+    }
+
+    if (!state.center) {
+      state.addLocation.selectedLocation = null;
+      state.addLocation.selectedLabel = null;
+      state.addLocation.selectedSource = null;
+      return;
+    }
+
+    setAddLocationSelection(state.center, state.centerLabel || "your selected area", "browse-center");
+  }
+
+  function hasMapsSupport() {
+    return Boolean(config.googleMapsApiKey && window.google && window.google.maps);
+  }
+
+  function focusMapOnLocation(location, zoom = 16) {
+    if (!map || !location) {
+      return;
+    }
+    map.setCenter(location);
+    map.setZoom(zoom);
+    syncMap();
+  }
+
+  function reverseGeocodeAddLocation(location) {
+    if (!addLocationGeocoder || !location) {
+      return;
+    }
+
+    addLocationGeocoder.geocode({ location }, (results, status) => {
+      if (status !== "OK" || !Array.isArray(results) || results.length === 0) {
+        renderAddLocation();
+        return;
+      }
+
+      const [firstResult] = results;
+      state.addLocation.selectedLabel = firstResult.formatted_address;
+      if (!elements.addLocationAddress.value.trim()) {
+        elements.addLocationAddress.value = firstResult.formatted_address;
+      }
+      renderAddLocation();
+    });
+  }
+
+  function ensureAddLocationMapTools() {
+    if (!hasMapsSupport()) {
+      return;
+    }
+
+    addLocationGeocoder = addLocationGeocoder ?? new google.maps.Geocoder();
+
+    if (!mapClickListenerAttached) {
+      map.addListener("click", (event) => {
+        if (!state.addLocation.pinPlacementMode) {
+          return;
+        }
+
+        const location = {
+          lat: event.latLng.lat(),
+          lng: event.latLng.lng()
+        };
+        setAddLocationSelection(location, null, "map-pin");
+        reverseGeocodeAddLocation(location);
+        resetAddLocationFeedback();
+        clearDuplicateWarning();
+        renderAddLocation();
+        syncMap();
+      });
+      mapClickListenerAttached = true;
+    }
+
+    if (!addLocationAutocomplete && google.maps.places && elements.addLocationAddress) {
+      addLocationAutocomplete = new google.maps.places.Autocomplete(elements.addLocationAddress, {
+        fields: ["formatted_address", "geometry", "name"]
+      });
+      addLocationAutocomplete.addListener("place_changed", () => {
+        const place = addLocationAutocomplete.getPlace();
+        const geometryLocation = place?.geometry?.location;
+        if (!geometryLocation) {
+          state.addLocation.error = "Select a suggested address so we can place the venue pin.";
+          state.addLocation.success = null;
+          renderAddLocation();
+          return;
+        }
+
+        const location = {
+          lat: geometryLocation.lat(),
+          lng: geometryLocation.lng()
+        };
+        const label = place.formatted_address || place.name || elements.addLocationAddress.value.trim();
+        setAddLocationSelection(location, label, "address-search");
+        elements.addLocationAddress.value = label;
+        resetAddLocationFeedback();
+        clearDuplicateWarning();
+        renderAddLocation();
+        focusMapOnLocation(location);
+      });
+    }
   }
 
   function resetAddLocationFeedback() {
@@ -622,26 +769,39 @@
 
   function renderAddLocation() {
     const addLocationCenter = getAddLocationCenter();
-    const feedback = state.addLocation.submitting
+    const feedbackState = state.addLocation.pinPlacementMode
+      ? "pending"
+      : state.addLocation.submitting
+        ? "pending"
+        : state.addLocation.error
+          ? "error"
+          : state.addLocation.success
+            ? "success"
+            : "idle";
+    const feedback = state.addLocation.pinPlacementMode
+      ? "Pin placement is active. Tap the map to set the new venue."
+      : state.addLocation.submitting
       ? "Checking for duplicates and saving your venue..."
       : state.addLocation.error ??
         state.addLocation.success ??
         "Choose a discovery area first, then add the venue details.";
-    const feedbackState = state.addLocation.submitting
-      ? "pending"
-      : state.addLocation.error
-        ? "error"
-        : state.addLocation.success
-          ? "success"
-          : "idle";
 
     elements.addLocationFeedback.textContent = feedback;
     elements.addLocationFeedback.setAttribute("data-state", feedbackState);
     elements.addLocationLocationSummary.textContent = addLocationCenter
-      ? `Venue location will use ${state.centerLabel || "your selected area"}.`
+      ? state.addLocation.selectedSource === "address-search"
+        ? `Venue pin set from ${state.addLocation.selectedLabel}.`
+        : state.addLocation.selectedSource === "map-pin"
+          ? `Venue pin placed on the map${state.addLocation.selectedLabel ? ` near ${state.addLocation.selectedLabel}` : ""}.`
+          : `Venue pin will use ${state.addLocation.selectedLabel || "your selected area"}.`
       : "Pick your location or Central London above before submitting a new venue.";
-    elements.addLocationLocationSummary.setAttribute("data-state", addLocationCenter ? "success" : "idle");
+    elements.addLocationLocationSummary.setAttribute(
+      "data-state",
+      state.addLocation.pinPlacementMode ? "pending" : addLocationCenter ? "success" : "idle"
+    );
     elements.addLocationSubmit.disabled = state.addLocation.submitting;
+    elements.addLocationUseCurrent.disabled = state.addLocation.submitting;
+    elements.addLocationPlacePin.disabled = state.addLocation.submitting;
     elements.addLocationSubmitAnyway.disabled =
       state.addLocation.submitting || !state.addLocation.pendingPayload;
     elements.addLocationCancelWarning.disabled = state.addLocation.submitting;
@@ -688,6 +848,10 @@
       throw new Error("Choose your location or Central London first so we can place the venue.");
     }
 
+    if (state.addLocation.pinPlacementMode) {
+      throw new Error("Tap the map to finish placing the venue pin before submitting.");
+    }
+
     const payload = {
       name,
       category,
@@ -719,6 +883,11 @@
     state.center = { lat: location.lat, lng: location.lng };
     state.centerLabel = location.name;
     state.centerSource = "created-location";
+    setAddLocationSelection(
+      { lat: location.lat, lng: location.lng },
+      location.address || location.name,
+      "browse-center"
+    );
     state.locations = [{ ...location, distance_m: 0 }];
     state.addLocation.success = `${location.name} is now live and visible below.`;
     clearDuplicateWarning();
@@ -801,9 +970,11 @@
     state.center = center;
     state.centerLabel = label;
     state.centerSource = centerSource;
+    syncAddLocationToBrowseCenter();
     syncUrl();
     renderStatus();
     renderList();
+    renderAddLocation();
     syncMap();
 
     try {
@@ -854,6 +1025,7 @@
       state.loading = false;
       renderStatus();
       renderList();
+      renderAddLocation();
       syncMap();
     }
   }
@@ -960,6 +1132,28 @@
   elements.categoryInput.addEventListener("input", scheduleTypedSearch);
   elements.radiusSelect.addEventListener("change", applyDiscreteFilters);
   elements.verifiedOnly.addEventListener("change", applyDiscreteFilters);
+  elements.addLocationUseCurrent.addEventListener("click", () => {
+    syncAddLocationToBrowseCenter();
+    resetAddLocationFeedback();
+    clearDuplicateWarning();
+    renderAddLocation();
+    syncMap();
+  });
+  elements.addLocationPlacePin.addEventListener("click", () => {
+    if (!config.googleMapsApiKey) {
+      state.addLocation.error = "Set GOOGLE_MAPS_API_KEY to place a venue pin on the map.";
+      state.addLocation.success = null;
+      renderAddLocation();
+      return;
+    }
+
+    state.addLocation.pinPlacementMode = true;
+    resetAddLocationFeedback();
+    clearDuplicateWarning();
+    renderAddLocation();
+    setActiveTab("map");
+    syncMap();
+  });
   elements.addLocationForm.addEventListener("submit", (event) => {
     event.preventDefault();
     submitAddLocation();
@@ -989,6 +1183,7 @@
   }
 
   applyStateToControls();
+  syncAddLocationToBrowseCenter();
   renderAddLocation();
 
   if (state.center || hasSearchCriteria()) {

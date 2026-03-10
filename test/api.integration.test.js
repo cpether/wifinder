@@ -107,6 +107,8 @@ test("web shell route serves the mobile map/list app and static assets", async (
     assert.match(home.body, /id="add-location-form"/);
     assert.match(home.body, /id="add-location-name"/);
     assert.match(home.body, /id="add-location-submit-anyway"/);
+    assert.match(home.body, /id="add-location-use-current"/);
+    assert.match(home.body, /id="add-location-place-pin"/);
     assert.doesNotMatch(home.body, /id="add-location-lat"/);
     assert.doesNotMatch(home.body, /id="add-location-lng"/);
     assert.doesNotMatch(home.body, /id="manual-location-form"/);
