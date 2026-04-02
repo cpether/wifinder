@@ -130,6 +130,25 @@ test("web shell route serves the mobile map/list app and static assets", async (
   });
 });
 
+test("experimental v2 web shell route serves the Stitch-inspired map-first layout", async () => {
+  await withServer(async ({ request }) => {
+    const home = await request("/v2", { raw: true });
+    assert.equal(home.status, 200);
+    assert.match(home.contentType, /^text\/html/);
+    assert.match(home.body, /Home\/Map Search/);
+    assert.match(home.body, /Browse by map or list/);
+    assert.match(home.body, /Classic view/);
+    assert.match(home.body, /id="map-canvas"/);
+    assert.match(home.body, /id="search-input"/);
+    assert.match(home.body, /id="category-input"/);
+    assert.match(home.body, /id="radius-select"/);
+    assert.match(home.body, /id="verified-only"/);
+    assert.match(home.body, /id="location-list"/);
+    assert.match(home.body, /id="add-location-form"/);
+    assert.match(home.body, /"createLocationEndpoint":"\/api\/locations"/);
+  });
+});
+
 test("health endpoint returns service metadata and issues token", async () => {
   await withServer(async ({ request }) => {
     const response = await request("/health");

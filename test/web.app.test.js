@@ -149,7 +149,7 @@ function createGoogleMapsStub() {
   };
 }
 
-function createHarness({ search = "", fetchImpl, bootstrapOverrides = {}, google = undefined } = {}) {
+function createHarness({ search = "", fetchImpl, bootstrapOverrides = {}, google = undefined, navigatorOverride = {} } = {}) {
   const tabList = createElement({ id: "tab-list", dataset: { tab: "list" } });
   const tabMap = createElement({ id: "tab-map", dataset: { tab: "map" } });
 
@@ -255,7 +255,7 @@ function createHarness({ search = "", fetchImpl, bootstrapOverrides = {}, google
   const context = vm.createContext({
     window,
     document,
-    navigator: {},
+    navigator: navigatorOverride,
     google,
     fetch: fetchImpl
       ? async (url, options) => {
@@ -291,6 +291,37 @@ function createHarness({ search = "", fetchImpl, bootstrapOverrides = {}, google
     storage
   };
 }
+
+test("web app can auto-locate on load when configured", async () => {
+  const geolocationCalls = [];
+  const harness = createHarness({
+    bootstrapOverrides: {
+      autoLocateOnLoad: true
+    },
+    navigatorOverride: {
+      geolocation: {
+        getCurrentPosition(success) {
+          geolocationCalls.push("called");
+          success({
+            coords: {
+              latitude: 51.5007,
+              longitude: -0.1246
+            }
+          });
+        }
+      }
+    }
+  });
+
+  await flushImmediate();
+
+  assert.equal(geolocationCalls.length, 1);
+  assert.equal(harness.fetchCalls.length, 1);
+  const requestUrl = new URL(harness.fetchCalls[0].url, "http://localhost");
+  assert.equal(requestUrl.pathname, "/api/locations/nearby");
+  assert.equal(requestUrl.searchParams.get("lat"), "51.5007");
+  assert.equal(requestUrl.searchParams.get("lng"), "-0.1246");
+});
 
 test("web app restores deep-linked search filters into controls and the initial API request", async () => {
   const harness = createHarness({

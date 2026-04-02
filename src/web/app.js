@@ -8,6 +8,8 @@
   const radiusOptions = Array.isArray(config.radiusOptions) && config.radiusOptions.length > 0
     ? config.radiusOptions
     : [config.defaultRadius];
+  const hasStatusBanner = Boolean(document.getElementById("status-banner"));
+  const hasAddLocationUi = Boolean(document.getElementById("add-location-form"));
 
   function normalizeRadius(value) {
     const parsed = Number(value);
@@ -40,6 +42,7 @@
     useLocation: document.getElementById("use-location"),
     useFallback: document.getElementById("use-fallback"),
     searchInput: document.getElementById("search-input"),
+    searchSubmit: document.getElementById("search-submit"),
     categoryInput: document.getElementById("category-input"),
     radiusSelect: document.getElementById("radius-select"),
     verifiedOnly: document.getElementById("verified-only"),
@@ -63,6 +66,7 @@
     list: document.getElementById("location-list"),
     mapCanvas: document.getElementById("map-canvas"),
     mapOverlay: document.getElementById("map-overlay"),
+    categoryChips: Array.from(document.querySelectorAll("[data-category-chip]")),
     tabButtons: Array.from(document.querySelectorAll("[data-tab]")),
     panels: {
       list: document.getElementById("panel-list"),
@@ -234,6 +238,20 @@
     elements.categoryInput.value = state.filters.category;
     elements.radiusSelect.value = String(state.filters.radius);
     elements.verifiedOnly.checked = state.filters.verifiedOnly;
+    updateCategoryChips();
+  }
+
+  function updateCategoryChips() {
+    if (!elements.categoryChips.length) {
+      return;
+    }
+
+    const normalizedCategory = normalizeCategory().toLowerCase();
+    for (const chip of elements.categoryChips) {
+      const isActive = chip.dataset.categoryChip === normalizedCategory;
+      chip.classList.toggle("stitch-chip--active", isActive);
+      chip.setAttribute("aria-pressed", String(isActive));
+    }
   }
 
   function getStoredDeviceToken() {
@@ -342,7 +360,19 @@
     }
   }
 
+  function submitSearchFromControls() {
+    state.searchQuery = elements.searchInput.value;
+    state.filters.category = elements.categoryInput.value;
+    resetAddLocationFeedback();
+    clearDuplicateWarning();
+    fetchLocations(state.center, state.centerLabel, state.centerSource);
+  }
+
   function renderStatus() {
+    if (!hasStatusBanner) {
+      return;
+    }
+
     const searchQuery = normalizeSearchQuery();
     const mode = getRequestMode();
 
@@ -650,6 +680,10 @@
   }
 
   function syncAddLocationToBrowseCenter() {
+    if (!hasAddLocationUi) {
+      return;
+    }
+
     state.addLocation.pinPlacementMode = false;
     const shouldTrackBrowseCenter =
       !state.addLocation.selectedLocation || state.addLocation.selectedSource === "browse-center";
@@ -682,7 +716,7 @@
   }
 
   function reverseGeocodeAddLocation(location) {
-    if (!addLocationGeocoder || !location) {
+    if (!hasAddLocationUi || !addLocationGeocoder || !location) {
       return;
     }
 
@@ -702,7 +736,7 @@
   }
 
   function ensureAddLocationMapTools() {
-    if (!hasMapsSupport()) {
+    if (!hasAddLocationUi || !hasMapsSupport()) {
       return;
     }
 
@@ -758,16 +792,28 @@
   }
 
   function resetAddLocationFeedback() {
+    if (!hasAddLocationUi) {
+      return;
+    }
+
     state.addLocation.error = null;
     state.addLocation.success = null;
   }
 
   function clearDuplicateWarning() {
+    if (!hasAddLocationUi) {
+      return;
+    }
+
     state.addLocation.duplicates = [];
     state.addLocation.pendingPayload = null;
   }
 
   function renderAddLocation() {
+    if (!hasAddLocationUi) {
+      return;
+    }
+
     const addLocationCenter = getAddLocationCenter();
     const feedbackState = state.addLocation.pinPlacementMode
       ? "pending"
@@ -830,6 +876,10 @@
   }
 
   function buildAddLocationPayload({ ignoreDuplicateWarning = false } = {}) {
+    if (!hasAddLocationUi) {
+      throw new Error("Add WiFi is not available on this screen.");
+    }
+
     const addLocationCenter = getAddLocationCenter();
     const name = elements.addLocationName.value.trim();
     const category = elements.addLocationCategory.value.trim();
@@ -903,6 +953,10 @@
   }
 
   async function submitAddLocation({ ignoreDuplicateWarning = false } = {}) {
+    if (!hasAddLocationUi) {
+      return;
+    }
+
     if (state.addLocation.submitting) {
       return;
     }
@@ -1130,52 +1184,67 @@
   );
   elements.searchInput.addEventListener("input", scheduleTypedSearch);
   elements.categoryInput.addEventListener("input", scheduleTypedSearch);
+  if (elements.searchSubmit) {
+    elements.searchSubmit.addEventListener("click", submitSearchFromControls);
+  }
   elements.radiusSelect.addEventListener("change", applyDiscreteFilters);
   elements.verifiedOnly.addEventListener("change", applyDiscreteFilters);
-  elements.addLocationUseCurrent.addEventListener("click", () => {
-    syncAddLocationToBrowseCenter();
-    resetAddLocationFeedback();
-    clearDuplicateWarning();
-    renderAddLocation();
-    syncMap();
-  });
-  elements.addLocationPlacePin.addEventListener("click", () => {
-    if (!config.googleMapsApiKey) {
-      state.addLocation.error = "Set GOOGLE_MAPS_API_KEY to place a venue pin on the map.";
-      state.addLocation.success = null;
+  for (const chip of elements.categoryChips) {
+    chip.addEventListener("click", () => {
+      const nextCategory = chip.dataset.categoryChip ?? "";
+      const currentCategory = normalizeCategory().toLowerCase();
+      elements.categoryInput.value = currentCategory === nextCategory ? "" : nextCategory;
+      state.filters.category = elements.categoryInput.value;
+      updateCategoryChips();
+      submitSearchFromControls();
+    });
+  }
+  if (hasAddLocationUi) {
+    elements.addLocationUseCurrent.addEventListener("click", () => {
+      syncAddLocationToBrowseCenter();
+      clearDuplicateWarning();
+      resetAddLocationFeedback();
       renderAddLocation();
-      return;
-    }
+      syncMap();
+    });
+    elements.addLocationPlacePin.addEventListener("click", () => {
+      if (!config.googleMapsApiKey) {
+        state.addLocation.error = "Set GOOGLE_MAPS_API_KEY to place a venue pin on the map.";
+        state.addLocation.success = null;
+        renderAddLocation();
+        return;
+      }
 
-    state.addLocation.pinPlacementMode = true;
-    resetAddLocationFeedback();
-    clearDuplicateWarning();
-    renderAddLocation();
-    setActiveTab("map");
-    syncMap();
-  });
-  elements.addLocationForm.addEventListener("submit", (event) => {
-    event.preventDefault();
-    submitAddLocation();
-  });
-  elements.addLocationSubmitAnyway.addEventListener("click", () => submitAddLocation({ ignoreDuplicateWarning: true }));
-  elements.addLocationCancelWarning.addEventListener("click", () => {
-    clearDuplicateWarning();
-    resetAddLocationFeedback();
-    renderAddLocation();
-  });
-
-  for (const field of [
-    elements.addLocationName,
-    elements.addLocationCategory,
-    elements.addLocationAddress,
-    elements.addLocationNotes
-  ]) {
-    field.addEventListener("input", () => {
+      state.addLocation.pinPlacementMode = true;
+      resetAddLocationFeedback();
+      clearDuplicateWarning();
+      renderAddLocation();
+      setActiveTab("map");
+      syncMap();
+    });
+    elements.addLocationForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      submitAddLocation();
+    });
+    elements.addLocationSubmitAnyway.addEventListener("click", () => submitAddLocation({ ignoreDuplicateWarning: true }));
+    elements.addLocationCancelWarning.addEventListener("click", () => {
       clearDuplicateWarning();
       resetAddLocationFeedback();
       renderAddLocation();
     });
+
+    for (const field of [
+      elements.addLocationName,
+      elements.addLocationCategory,
+      elements.addLocationAddress,
+      elements.addLocationNotes
+    ]) {
+      field.addEventListener("input", () => {
+        clearDuplicateWarning();
+        resetAddLocationFeedback();
+        renderAddLocation();
+      });
+    }
   }
 
   for (const button of elements.tabButtons) {
@@ -1185,6 +1254,11 @@
   applyStateToControls();
   syncAddLocationToBrowseCenter();
   renderAddLocation();
+
+  if (config.autoLocateOnLoad && !state.center && !hasSearchCriteria()) {
+    requestCurrentLocation();
+    return;
+  }
 
   if (state.center || hasSearchCriteria()) {
     fetchLocations(state.center, state.centerLabel, state.centerSource);
