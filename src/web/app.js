@@ -10,6 +10,21 @@
     : [config.defaultRadius];
   const hasStatusBanner = Boolean(document.getElementById("status-banner"));
   const hasAddLocationUi = Boolean(document.getElementById("add-location-form"));
+  const DARK_MAP_STYLES = [
+    { elementType: "geometry", stylers: [{ color: "#0f172a" }] },
+    { elementType: "labels.text.stroke", stylers: [{ color: "#0f172a" }] },
+    { elementType: "labels.text.fill", stylers: [{ color: "#94a3b8" }] },
+    { featureType: "administrative", elementType: "geometry", stylers: [{ color: "#1e293b" }] },
+    { featureType: "poi", elementType: "geometry", stylers: [{ color: "#111827" }] },
+    { featureType: "poi", elementType: "labels.text.fill", stylers: [{ color: "#64748b" }] },
+    { featureType: "road", elementType: "geometry", stylers: [{ color: "#1e293b" }] },
+    { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: "#334155" }] },
+    { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#cbd5e1" }] },
+    { featureType: "transit", elementType: "geometry", stylers: [{ color: "#172033" }] },
+    { featureType: "transit", elementType: "labels.text.fill", stylers: [{ color: "#64748b" }] },
+    { featureType: "water", elementType: "geometry", stylers: [{ color: "#020617" }] },
+    { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#60a5fa" }] }
+  ];
 
   function normalizeRadius(value) {
     const parsed = Number(value);
@@ -34,7 +49,10 @@
       searchQuery: params.get("q") || "",
       category: params.get("category") || "",
       radius: normalizeRadius(params.get("radius")),
-      verifiedOnly: params.get("verified") === "true"
+      verifiedOnly: params.get("verified") === "true",
+      addLocationName: params.get("name") || "",
+      addLocationAddress: params.get("address") || "",
+      addLocationCategory: params.get("newCategory") || ""
     };
   }
 
@@ -62,7 +80,8 @@
     addLocationSubmitAnyway: document.getElementById("add-location-submit-anyway"),
     addLocationCancelWarning: document.getElementById("add-location-cancel-warning"),
     statusBanner: document.getElementById("status-banner"),
-    resultsSummary: document.getElementById("results-summary"),
+    resultsHeading: document.getElementById("stitch-results-heading"),
+    resultsToggle: document.getElementById("stitch-results-toggle"),
     list: document.getElementById("location-list"),
     mapCanvas: document.getElementById("map-canvas"),
     mapOverlay: document.getElementById("map-overlay"),
@@ -73,6 +92,22 @@
       map: document.getElementById("panel-map")
     }
   };
+
+  let mapPromise = null;
+  let map = null;
+  let userMarker = null;
+  let addLocationMarker = null;
+  let markers = [];
+  let infoWindow = null;
+  let searchTimer = null;
+  let requestSequence = 0;
+  let deviceToken = null;
+  let addLocationAutocomplete = null;
+  let addLocationGeocoder = null;
+  let searchPlacesApi = null;
+  let markerApi = null;
+  let coreApi = null;
+  let mapClickListenerAttached = false;
 
   /* ═══════ Theme Toggle ═══════ */
   const themeToggle = document.getElementById("theme-toggle");
@@ -85,6 +120,17 @@
     } catch {
       return null;
     }
+  }
+
+  function getCurrentTheme() {
+    return document.documentElement?.getAttribute("data-theme") || "light";
+  }
+
+  function getConfiguredMapId() {
+    if (!config.googleMapsMapId || config.googleMapsMapId === "DEMO_MAP_ID") {
+      return null;
+    }
+    return config.googleMapsMapId;
   }
 
   function applyTheme(theme) {
@@ -100,6 +146,7 @@
     } catch {
       /* storage unavailable */
     }
+    syncMapTheme();
   }
 
   const storedTheme = getStoredTheme();
@@ -111,6 +158,13 @@
     themeToggle.addEventListener("click", function () {
       const current = document.documentElement.getAttribute("data-theme") || "light";
       applyTheme(current === "dark" ? "light" : "dark");
+    });
+  }
+
+  if (elements.resultsToggle) {
+    elements.resultsToggle.addEventListener("click", function () {
+      const expanded = elements.resultsToggle.getAttribute("aria-expanded") === "true";
+      setResultsRailExpanded(!expanded);
     });
   }
 
@@ -132,6 +186,7 @@
       radius: initialState.radius,
       verifiedOnly: initialState.verifiedOnly
     },
+    placeCandidate: null,
     addLocation: {
       submitting: false,
       error: null,
@@ -144,19 +199,7 @@
       pinPlacementMode: false
     }
   };
-
-  let mapPromise = null;
-  let map = null;
-  let userMarker = null;
-  let addLocationMarker = null;
-  let markers = [];
-  let infoWindow = null;
-  let searchTimer = null;
-  let requestSequence = 0;
-  let deviceToken = getStoredDeviceToken();
-  let addLocationAutocomplete = null;
-  let addLocationGeocoder = null;
-  let mapClickListenerAttached = false;
+  deviceToken = getStoredDeviceToken();
 
   function normalizeSearchQuery() {
     return state.searchQuery.trim();
@@ -205,6 +248,14 @@
       month: "short",
       year: "numeric"
     }).format(new Date(value));
+  }
+
+  function normalizeText(value) {
+    return String(value ?? "")
+      .toLowerCase()
+      .replaceAll(/[^a-z0-9]+/g, " ")
+      .trim()
+      .replaceAll(/\s+/g, " ");
   }
 
   function escapeHtml(value) {
@@ -360,6 +411,16 @@
     }
   }
 
+  function setResultsRailExpanded(expanded) {
+    if (!elements.panels.list?.classList || !elements.resultsToggle) {
+      return;
+    }
+
+    elements.panels.list.classList.toggle("stitch-results-rail--collapsed", !expanded);
+    elements.resultsToggle.textContent = expanded ? "Hide" : "See all";
+    elements.resultsToggle.setAttribute("aria-expanded", String(expanded));
+  }
+
   function submitSearchFromControls() {
     state.searchQuery = elements.searchInput.value;
     state.filters.category = elements.categoryInput.value;
@@ -423,35 +484,72 @@
     const searchQuery = normalizeSearchQuery();
     const mode = getRequestMode();
 
+    if (elements.resultsHeading) {
+      const setResultsHeading = (count, label) => {
+        elements.resultsHeading.innerHTML = `<span class="stitch-results-count">${escapeHtml(count)}</span> <span class="stitch-results-label">${escapeHtml(label)}</span>`;
+      };
+
+      if (!state.center && !hasSearchCriteria() && !state.loading) {
+        setResultsHeading("0", "results near you");
+      } else if (state.loading) {
+        elements.resultsHeading.textContent = "Searching near you";
+      } else if (state.placeCandidate) {
+        setResultsHeading("1", "result near you");
+      } else if (state.locations.length === 0) {
+        if (mode === "search" && searchQuery) {
+          elements.resultsHeading.textContent = `No results for "${searchQuery}"`;
+        } else {
+          setResultsHeading("0", "results near you");
+        }
+      } else if (mode === "search" && searchQuery) {
+        elements.resultsHeading.textContent = `${state.locations.length} result${state.locations.length === 1 ? "" : "s"} for "${searchQuery}"`;
+      } else {
+        setResultsHeading(
+          String(state.locations.length),
+          `result${state.locations.length === 1 ? "" : "s"} near you`
+        );
+      }
+    }
+
     if (!state.center && !hasSearchCriteria() && !state.loading) {
-      elements.resultsSummary.textContent = "No search run yet.";
       elements.list.innerHTML =
         '<article class="empty-state">Use your location, Central London, or the search bar to start discovery.</article>';
       return;
     }
 
     if (state.loading) {
-      elements.resultsSummary.textContent = mode === "search" ? "Searching venues..." : "Searching nearby venues...";
       elements.list.innerHTML =
         '<article class="empty-state">Fetching the latest venue results from the API.</article>';
       return;
     }
 
     if (state.locations.length === 0) {
-      elements.resultsSummary.textContent = mode === "search" ? "No search results found." : "No nearby venues found.";
+      if (state.placeCandidate) {
+        elements.list.innerHTML = `<article class="location-card location-card--suggestion">
+          <div style="display:grid;gap:0.5rem">
+            <div style="display:flex;align-items:start;justify-content:space-between;gap:0.75rem">
+              <div style="min-width:0">
+                <h3>${escapeHtml(state.placeCandidate.name)}</h3>
+                <div class="location-meta">
+                  <div>${escapeHtml(state.placeCandidate.address || "Place found on the map")}</div>
+                  <div>No WiFi details added yet.</div>
+                </div>
+              </div>
+              <span class="chip">New place</span>
+            </div>
+            <a class="stitch-add-link" href="${escapeHtml(state.placeCandidate.addHref)}">Add WiFi details</a>
+          </div>
+        </article>`;
+        return;
+      }
+
       elements.list.innerHTML = mode === "search"
         ? `<article class="empty-state">${searchQuery ? `Try a broader search for "${escapeHtml(searchQuery)}".` : "Try relaxing a filter or widening the radius."}</article>`
         : '<article class="empty-state">Try another area or widen the search radius.</article>';
       return;
     }
 
-    elements.resultsSummary.textContent = mode === "search"
-      ? searchQuery
-        ? `${state.locations.length} result${state.locations.length === 1 ? "" : "s"} for "${searchQuery}".`
-        : `${state.locations.length} filtered venue${state.locations.length === 1 ? "" : "s"}.`
-      : `${state.locations.length} venue${state.locations.length === 1 ? "" : "s"} within ${formatRadius(state.filters.radius)}.`;
-
-    elements.list.innerHTML = state.locations
+    const locationMarkup = state.locations
       .map(
         (location) => `<article class="location-card">
           <div style="display:flex;align-items:start;justify-content:space-between;gap:0.5rem">
@@ -473,6 +571,26 @@
         </article>`
       )
       .join("");
+
+    const candidateMarkup = state.placeCandidate
+      ? `<article class="location-card location-card--suggestion">
+          <div style="display:grid;gap:0.5rem">
+            <div style="display:flex;align-items:start;justify-content:space-between;gap:0.75rem">
+              <div style="min-width:0">
+                <h3>${escapeHtml(state.placeCandidate.name)}</h3>
+                <div class="location-meta">
+                  <div>${escapeHtml(state.placeCandidate.address || "Place found on the map")}</div>
+                  <div>No WiFi details added yet.</div>
+                </div>
+              </div>
+              <span class="chip">New place</span>
+            </div>
+            <a class="stitch-add-link" href="${escapeHtml(state.placeCandidate.addHref)}">Add WiFi details</a>
+          </div>
+        </article>`
+      : "";
+
+    elements.list.innerHTML = `${candidateMarkup}${locationMarkup}`;
   }
 
   function renderMapMessage(message) {
@@ -480,9 +598,22 @@
     elements.mapOverlay.textContent = message;
   }
 
+  function clearMarker(marker) {
+    if (!marker) {
+      return;
+    }
+
+    if (typeof marker.setMap === "function") {
+      marker.setMap(null);
+      return;
+    }
+
+    marker.map = null;
+  }
+
   function clearMapMarkers() {
     for (const marker of markers) {
-      marker.setMap(null);
+      clearMarker(marker);
     }
     markers = [];
   }
@@ -491,16 +622,104 @@
     if (!addLocationMarker) {
       return;
     }
-    addLocationMarker.setMap(null);
+    clearMarker(addLocationMarker);
     addLocationMarker = null;
   }
 
-  function createMarker(position, title, iconUrl) {
+  function syncMapTheme() {
+    if (!map || !window.google || !window.google.maps) {
+      return;
+    }
+
+    recreateMapForTheme();
+  }
+
+  function getMapOptions(overrides = {}) {
+    const theme = getCurrentTheme();
+    const mapId = getConfiguredMapId();
+    const useCloudStyledMap = Boolean(mapId);
+    const colorScheme = coreApi?.ColorScheme
+      ? theme === "dark"
+        ? coreApi.ColorScheme.DARK
+        : coreApi.ColorScheme.LIGHT
+      : undefined;
+    return {
+      center: state.center || config.fallbackCenter,
+      zoom: 13,
+      disableDefaultUI: true,
+      zoomControl: true,
+      fullscreenControl: false,
+      streetViewControl: false,
+      mapTypeControl: false,
+      gestureHandling: config.mapGestureHandling || "auto",
+      mapId,
+      colorScheme,
+      styles: theme === "dark" && !useCloudStyledMap ? DARK_MAP_STYLES : null,
+      ...overrides
+    };
+  }
+
+  function recreateMapForTheme() {
+    if (!map || !elements.mapCanvas) {
+      return;
+    }
+
+    const center = typeof map.getCenter === "function" ? map.getCenter() : map.center;
+    const zoom = typeof map.getZoom === "function" ? map.getZoom() : map.zoom;
+
+    clearMapMarkers();
+    clearAddLocationMarker();
+    if (userMarker) {
+      clearMarker(userMarker);
+      userMarker = null;
+    }
+    if (infoWindow && typeof infoWindow.close === "function") {
+      infoWindow.close();
+    }
+    infoWindow = null;
+
+    map = new google.maps.Map(elements.mapCanvas, getMapOptions({ center, zoom }));
+    mapClickListenerAttached = false;
+
+    ensureAddLocationMapTools();
+    updateMapMarkers();
+  }
+
+  function getMarkerPalette(kind) {
+    if (kind === "user") {
+      return { background: "#2563eb", borderColor: "#1d4ed8", glyphColor: "#ffffff" };
+    }
+    if (kind === "draft") {
+      return { background: "#16a34a", borderColor: "#15803d", glyphColor: "#ffffff" };
+    }
+    return { background: "#ef4444", borderColor: "#dc2626", glyphColor: "#ffffff" };
+  }
+
+  function createMarker(position, title, kind = "result") {
+    if (markerApi?.AdvancedMarkerElement && getConfiguredMapId()) {
+      const markerOptions = {
+        map,
+        position,
+        title
+      };
+
+      if (markerApi.PinElement) {
+        const palette = getMarkerPalette(kind);
+        const pin = new markerApi.PinElement({
+          background: palette.background,
+          borderColor: palette.borderColor,
+          glyphColor: palette.glyphColor
+        });
+        markerOptions.content = pin;
+      }
+
+      return new markerApi.AdvancedMarkerElement(markerOptions);
+    }
+
     return new google.maps.Marker({
       map,
       position,
-      title,
-      icon: iconUrl
+      title
     });
   }
 
@@ -512,21 +731,21 @@
     clearMapMarkers();
 
     if (userMarker) {
-      userMarker.setMap(null);
+      clearMarker(userMarker);
       userMarker = null;
     }
 
     clearAddLocationMarker();
 
     if (state.center) {
-      userMarker = createMarker(state.center, "You are here", "https://maps.google.com/mapfiles/ms/icons/blue-dot.png");
+      userMarker = createMarker(state.center, "You are here", "user");
     }
 
     if (state.addLocation.selectedLocation) {
       addLocationMarker = createMarker(
         state.addLocation.selectedLocation,
         state.addLocation.selectedLabel || "New venue pin",
-        "https://maps.google.com/mapfiles/ms/icons/green-dot.png"
+        "draft"
       );
     }
 
@@ -534,9 +753,9 @@
       const marker = createMarker(
         { lat: location.lat, lng: location.lng },
         location.name,
-        "https://maps.google.com/mapfiles/ms/icons/red-dot.png"
+        "result"
       );
-      marker.addListener("click", () => {
+      const openInfoWindow = () => {
         infoWindow =
           infoWindow ??
           new google.maps.InfoWindow({
@@ -546,7 +765,12 @@
           `<strong>${escapeHtml(location.name)}</strong><br>${escapeHtml(location.category)}<br>${escapeHtml(formatDistance(location.distance_m))}`
         );
         infoWindow.open({ anchor: marker, map });
-      });
+      };
+      if (typeof marker.addEventListener === "function") {
+        marker.addEventListener("gmp-click", openInfoWindow);
+      } else if (typeof marker.addListener === "function") {
+        marker.addListener("click", openInfoWindow);
+      }
       markers.push(marker);
     }
   }
@@ -605,7 +829,7 @@
       };
 
       const script = document.createElement("script");
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(config.googleMapsApiKey)}&libraries=places&callback=${callbackName}`;
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(config.googleMapsApiKey)}&libraries=places&loading=async&callback=${callbackName}`;
       script.async = true;
       script.onerror = () => {
         reject(new Error("Google Maps failed to load."));
@@ -615,6 +839,22 @@
     });
 
     return mapPromise;
+  }
+
+  function initializeMap() {
+    if (map || !window.google || !window.google.maps) {
+      return;
+    }
+
+    map = new google.maps.Map(elements.mapCanvas, getMapOptions());
+  }
+
+  function ensureSearchServices() {
+    if (!window.google || !window.google.maps) {
+      return;
+    }
+
+    initializeMap();
   }
 
   function syncMap() {
@@ -627,17 +867,11 @@
     }
 
     loadGoogleMaps()
-      .then(() => {
+      .then(async () => {
+        await getCoreApi();
+        await getMarkerApi();
         if (!map) {
-          map = new google.maps.Map(elements.mapCanvas, {
-            center: state.center || config.fallbackCenter,
-            zoom: 13,
-            disableDefaultUI: true,
-            zoomControl: true,
-            fullscreenControl: false,
-            streetViewControl: false,
-            mapTypeControl: false
-          });
+          initializeMap();
         }
 
         ensureAddLocationMapTools();
@@ -648,13 +882,9 @@
         if (state.addLocation.pinPlacementMode) {
           elements.mapOverlay.hidden = true;
         } else if (state.locations.length === 0 && !state.center && !hasSearchCriteria()) {
-          renderMapMessage("Use your location, the fallback center, or the search bar to place venue pins.");
+          elements.mapOverlay.hidden = true;
         } else if (state.locations.length === 0) {
-          renderMapMessage(
-            mode === "search" && searchQuery
-              ? `No map pins matched "${searchQuery}".`
-              : "No venue pins matched the current filters."
-          );
+          elements.mapOverlay.hidden = true;
         } else {
           elements.mapOverlay.hidden = true;
         }
@@ -700,6 +930,47 @@
     }
 
     setAddLocationSelection(state.center, state.centerLabel || "your selected area", "browse-center");
+  }
+
+  function buildAddLocationHref(place) {
+    const params = new URLSearchParams();
+    params.set("lat", String(place.lat));
+    params.set("lng", String(place.lng));
+    params.set("label", place.address || place.name);
+    params.set("name", place.name);
+    if (place.address) {
+      params.set("address", place.address);
+    }
+    if (normalizeCategory()) {
+      params.set("newCategory", normalizeCategory());
+    }
+    return `/v3/add?${params.toString()}`;
+  }
+
+  function updatePlaceCandidate(place) {
+    if (!place) {
+      state.placeCandidate = null;
+      return;
+    }
+
+    const normalizedPlaceName = normalizeText(place.name);
+    const normalizedPlaceAddress = normalizeText(place.address);
+    const hasMatch = state.locations.some((location) => {
+      const nameMatch = normalizeText(location.name) === normalizedPlaceName;
+      const addressMatch = normalizedPlaceAddress && normalizeText(location.address) === normalizedPlaceAddress;
+      const closeMatch =
+        typeof location.distance_m === "number" &&
+        location.distance_m <= 120 &&
+        normalizeText(location.name).includes(normalizedPlaceName);
+      return nameMatch || addressMatch || closeMatch;
+    });
+
+    state.placeCandidate = hasMatch
+      ? null
+      : {
+          ...place,
+          addHref: buildAddLocationHref(place)
+        };
   }
 
   function hasMapsSupport() {
@@ -1021,6 +1292,7 @@
     const requestId = ++requestSequence;
     state.loading = true;
     state.error = null;
+    state.placeCandidate = null;
     state.center = center;
     state.centerLabel = label;
     state.centerSource = centerSource;
@@ -1171,6 +1443,128 @@
     fetchLocations(state.center, state.centerLabel, state.centerSource);
   }
 
+  function runDatabaseSearch() {
+    syncFiltersFromControls();
+    state.placeCandidate = null;
+    state.error = null;
+    clearSearchTimer();
+    fetchLocations(state.center, state.centerLabel, state.centerSource);
+  }
+
+  async function getPlacesSearchApi() {
+    if (searchPlacesApi) {
+      return searchPlacesApi;
+    }
+
+    if (!window.google || !google.maps || typeof google.maps.importLibrary !== "function") {
+      throw new Error("Places library is unavailable.");
+    }
+
+    const placesLibrary = await google.maps.importLibrary("places");
+    searchPlacesApi = {
+      Place: placesLibrary.Place,
+      SearchByTextRankPreference: placesLibrary.SearchByTextRankPreference
+    };
+    return searchPlacesApi;
+  }
+
+  async function getCoreApi() {
+    if (coreApi) {
+      return coreApi;
+    }
+
+    if (!window.google || !google.maps || typeof google.maps.importLibrary !== "function") {
+      return null;
+    }
+
+    coreApi = await google.maps.importLibrary("core");
+    return coreApi;
+  }
+
+  async function getMarkerApi() {
+    if (markerApi) {
+      return markerApi;
+    }
+
+    if (!window.google || !google.maps || typeof google.maps.importLibrary !== "function") {
+      return null;
+    }
+
+    const markerLibrary = await google.maps.importLibrary("marker");
+    markerApi = {
+      AdvancedMarkerElement: markerLibrary.AdvancedMarkerElement,
+      PinElement: markerLibrary.PinElement
+    };
+    return markerApi;
+  }
+
+  async function findPlaceByQuery(query) {
+    ensureSearchServices();
+
+    const { Place, SearchByTextRankPreference } = await getPlacesSearchApi();
+    const request = {
+      textQuery: query,
+      fields: ["displayName", "formattedAddress", "location"],
+      rankPreference: SearchByTextRankPreference?.RELEVANCE
+    };
+
+    if (state.center) {
+      request.locationBias = {
+        center: state.center,
+        radius: Math.max(state.filters.radius, 5000)
+      };
+    }
+
+    const response = await Place.searchByText(request);
+    const place = Array.isArray(response?.places) ? response.places[0] : null;
+    const location = place?.location;
+
+    if (!place || !location || typeof location.lat !== "function" || typeof location.lng !== "function") {
+      return null;
+    }
+
+    return {
+      name: place.displayName || query,
+      address: place.formattedAddress || "",
+      lat: location.lat(),
+      lng: location.lng()
+    };
+  }
+
+  async function performPrimarySearch() {
+    const query = elements.searchInput.value.trim();
+    if (!query) {
+      runDatabaseSearch();
+      return;
+    }
+
+    if (!config.googleMapsApiKey) {
+      runDatabaseSearch();
+      return;
+    }
+
+    try {
+      await loadGoogleMaps();
+      const place = await findPlaceByQuery(query);
+      if (!place) {
+        runDatabaseSearch();
+        return;
+      }
+
+      state.searchQuery = "";
+      state.center = { lat: place.lat, lng: place.lng };
+      state.centerLabel = place.name;
+      state.centerSource = "place-search";
+      clearSearchTimer();
+      focusMapOnLocation(state.center, 15);
+      await fetchLocations(state.center, state.centerLabel, state.centerSource);
+      updatePlaceCandidate(place);
+      renderList();
+    } catch {
+      runDatabaseSearch();
+    }
+  }
+
   elements.useLocation.addEventListener("click", requestCurrentLocation);
   elements.useFallback.addEventListener("click", () =>
     fetchLocations(
@@ -1185,8 +1579,14 @@
   elements.searchInput.addEventListener("input", scheduleTypedSearch);
   elements.categoryInput.addEventListener("input", scheduleTypedSearch);
   if (elements.searchSubmit) {
-    elements.searchSubmit.addEventListener("click", submitSearchFromControls);
+    elements.searchSubmit.addEventListener("click", performPrimarySearch);
   }
+  elements.searchInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      performPrimarySearch();
+    }
+  });
   elements.radiusSelect.addEventListener("change", applyDiscreteFilters);
   elements.verifiedOnly.addEventListener("change", applyDiscreteFilters);
   for (const chip of elements.categoryChips) {
@@ -1252,6 +1652,11 @@
   }
 
   applyStateToControls();
+  if (hasAddLocationUi) {
+    elements.addLocationName.value = initialState.addLocationName;
+    elements.addLocationAddress.value = initialState.addLocationAddress;
+    elements.addLocationCategory.value = initialState.addLocationCategory;
+  }
   syncAddLocationToBrowseCenter();
   renderAddLocation();
 

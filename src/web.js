@@ -21,6 +21,7 @@ function serializeBootstrap(payload) {
 function renderBootstrap(config) {
   return serializeBootstrap({
     googleMapsApiKey: config.googleMapsApiKey,
+    googleMapsMapId: config.googleMapsMapId,
     nearbyEndpoint: "/api/locations/nearby",
     searchEndpoint: "/api/locations/search",
     createLocationEndpoint: "/api/locations",
@@ -90,7 +91,7 @@ function renderClassicAppHtml(config) {
       <section class="map-card" id="panel-map" aria-label="Map of nearby Wi-Fi venues">
         <div class="map-frame">
           <div class="map-canvas" id="map-canvas"></div>
-          <div class="map-overlay" id="map-overlay">Use my location or Central London to load the map.</div>
+          <div class="map-overlay" id="map-overlay" hidden></div>
         </div>
       </section>
 
@@ -334,7 +335,7 @@ function renderMapLayoutAppHtml(config) {
               </section>
               <div class="status-banner status-banner--overlay" id="status-banner" aria-live="polite">Choose a location to load nearby venues, or start typing to search the full dataset.</div>
             </div>
-            <div class="map-overlay" id="map-overlay">Use my location or Central London to load the map.</div>
+            <div class="map-overlay" id="map-overlay" hidden></div>
           </div>
         </section>
 
@@ -433,7 +434,8 @@ function renderMapLayoutAppHtml(config) {
 function renderStitchV3AppHtml(config) {
   const bootstrap = serializeBootstrap({
     ...JSON.parse(renderBootstrap(config)),
-    autoLocateOnLoad: true
+    autoLocateOnLoad: true,
+    mapGestureHandling: "greedy"
   });
 
   return `<!doctype html>
@@ -447,15 +449,14 @@ function renderStitchV3AppHtml(config) {
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;700;800&family=Inter:wght@400;500;600;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/assets/app.css">
   </head>
-  <body class="layout-stitch-v3">
+  <body class="layout-stitch-v3 layout-stitch-v3-home">
     <div class="stitch-shell">
       <nav class="stitch-topbar">
         <div class="stitch-brand">
-          <span class="material-symbols-outlined stitch-icon-fill" aria-hidden="true">wifi_find</span>
-          <span class="stitch-brand-wordmark">WiFi Connect</span>
+          <div class="logo-circle"><div class="logo-dot"></div></div>
+          <span class="logo-text">Wi<span class="logo-accent">Finder</span></span>
         </div>
         <div class="stitch-topbar-actions">
-          <a class="stitch-toplink" href="/" aria-label="Open classic home layout">Classic</a>
           <button class="stitch-topicon" id="theme-toggle" type="button" aria-label="Toggle dark mode">
             <svg id="theme-icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
             <svg id="theme-icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
@@ -471,6 +472,9 @@ function renderStitchV3AppHtml(config) {
             <button id="search-submit" class="stitch-search-button" type="button">Find</button>
           </div>
           <div class="stitch-chip-row">
+            <button class="stitch-chip stitch-chip--icon-only" id="use-location" type="button" aria-label="Use my location">
+              <span class="material-symbols-outlined" aria-hidden="true">my_location</span>
+            </button>
             <button class="stitch-chip stitch-chip--active" type="button" data-category-chip="cafe">
               <span class="material-symbols-outlined" aria-hidden="true">coffee</span>
               Cafes
@@ -488,69 +492,34 @@ function renderStitchV3AppHtml(config) {
               Coworking
             </button>
           </div>
-        <div class="stitch-filterbar">
-            <button class="stitch-utility" id="use-location" type="button">
-              <span class="material-symbols-outlined" aria-hidden="true">my_location</span>
-              Use my location
-            </button>
-            <button class="stitch-utility" id="use-fallback" type="button">
-              <span class="material-symbols-outlined" aria-hidden="true">near_me</span>
-              Central London
-            </button>
-            <label class="stitch-select-wrap" for="radius-select">
-              <span class="material-symbols-outlined" aria-hidden="true">tune</span>
-              <select id="radius-select" class="stitch-select">
-                ${RADIUS_OPTIONS.map(
-                  (radius) =>
-                    `<option value="${radius}">${radius < 1000 ? `${radius} m` : `${radius / 1000} km`}</option>`
-                ).join("")}
-              </select>
-            </label>
-            <label class="stitch-verified" for="verified-only">
-              <input id="verified-only" type="checkbox">
-              Verified
-            </label>
-          </div>
           <input id="category-input" type="hidden" autocomplete="off">
+          <button id="use-fallback" type="button" hidden>Central London</button>
+          <select id="radius-select" hidden>
+            ${RADIUS_OPTIONS.map(
+              (radius) =>
+                `<option value="${radius}">${radius < 1000 ? `${radius} m` : `${radius / 1000} km`}</option>`
+            ).join("")}
+          </select>
+          <input id="verified-only" type="checkbox" hidden>
         </div>
 
         <section class="stitch-map-stage is-active" id="panel-map" aria-label="Map of nearby Wi-Fi venues">
           <div class="stitch-map-backdrop" aria-hidden="true"></div>
           <div class="map-canvas stitch-map-canvas" id="map-canvas"></div>
-          <div class="stitch-faux-pin stitch-faux-pin--label">
-            <div class="stitch-pin-card">
-              <span class="material-symbols-outlined stitch-icon-fill" aria-hidden="true">wifi</span>
-              Brew &amp; Co.
-            </div>
-            <div class="stitch-pin-tail"></div>
-          </div>
-          <div class="stitch-faux-pin stitch-faux-pin--verified">
-            <div class="stitch-pin-card stitch-pin-card--light">
-              <span class="material-symbols-outlined stitch-icon-fill stitch-icon-success" aria-hidden="true">check_circle</span>
-              The Local Pub
-            </div>
-            <div class="stitch-pin-tail stitch-pin-tail--light"></div>
-          </div>
-          <div class="stitch-faux-pin stitch-faux-pin--dot">
-            <div class="stitch-pin-bubble">
-              <span class="material-symbols-outlined" aria-hidden="true">location_on</span>
-            </div>
-          </div>
-          <div class="map-overlay stitch-map-overlay" id="map-overlay">Use my location or Central London to load the map.</div>
+          <div class="map-overlay stitch-map-overlay" id="map-overlay" hidden></div>
         </section>
 
-        <section class="stitch-results-rail is-active" id="panel-list" aria-labelledby="stitch-results-heading">
+        <section class="stitch-results-rail stitch-results-rail--collapsed is-active" id="panel-list" aria-labelledby="stitch-results-heading">
           <div class="stitch-results-header">
-            <h2 id="stitch-results-heading">Nearby WiFi Spots</h2>
-            <button class="stitch-see-all" type="button">See all</button>
+            <div class="stitch-results-copy">
+              <div class="stitch-results-title-row">
+                <h2 id="stitch-results-heading"><span class="stitch-results-count">0</span> <span class="stitch-results-label">results near you</span></h2>
+                <button class="stitch-see-all" id="stitch-results-toggle" type="button" aria-expanded="false" aria-controls="location-list">See all</button>
+              </div>
+            </div>
           </div>
-          <div class="results-summary stitch-results-summary" id="results-summary">No search run yet.</div>
           <div class="card-list stitch-card-rail" id="location-list"></div>
         </section>
-
-        <a class="stitch-fab" href="/v3/add" aria-label="Add WiFi">
-          <span class="material-symbols-outlined" aria-hidden="true">add</span>
-        </a>
 
         <div class="tab-list" role="tablist" aria-label="Browse by map or list" hidden>
           <button class="tab-button is-active" id="tab-list" type="button" role="tab" aria-selected="true" aria-controls="panel-list" data-tab="list">List</button>
@@ -601,11 +570,10 @@ function renderStitchV3AddHtml(config) {
     <div class="stitch-shell">
       <nav class="stitch-topbar">
         <div class="stitch-brand">
-          <span class="material-symbols-outlined stitch-icon-fill" aria-hidden="true">wifi_find</span>
-          <span class="stitch-brand-wordmark">WiFi Connect</span>
+          <div class="logo-circle"><div class="logo-dot"></div></div>
+          <span class="logo-text">Wi<span class="logo-accent">Finder</span></span>
         </div>
         <div class="stitch-topbar-actions">
-          <a class="stitch-toplink" href="/v3" aria-label="Back to v3 home">Explore</a>
           <button class="stitch-topicon" id="theme-toggle" type="button" aria-label="Toggle dark mode">
             <svg id="theme-icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
             <svg id="theme-icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>

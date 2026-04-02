@@ -16,6 +16,7 @@ function createElement({ id = null, dataset = {} } = {}) {
     hidden: false,
     innerHTML: "",
     textContent: "",
+    style: {},
     attributes: {},
     listeners: new Map(),
     classList: {
@@ -47,12 +48,21 @@ function createGoogleMapsStub() {
     constructor(_element, options) {
       this.center = options.center;
       this.zoom = options.zoom;
+      this.options = options;
       this.listeners = new Map();
       createdMaps.push(this);
     }
 
     addListener(event, handler) {
       this.listeners.set(event, handler);
+    }
+
+    getCenter() {
+      return this.center;
+    }
+
+    getZoom() {
+      return this.zoom;
     }
 
     setCenter(center) {
@@ -91,10 +101,32 @@ function createGoogleMapsStub() {
     }
   }
 
+  class FakeAdvancedMarkerElement {
+    constructor(options) {
+      this.map = options.map;
+      this.position = options.position;
+      this.title = options.title;
+      this.content = options.content;
+      this.listeners = new Map();
+    }
+
+    addEventListener(event, handler) {
+      this.listeners.set(event, handler);
+    }
+  }
+
+  class FakePinElement {
+    constructor() {
+      this.element = {};
+    }
+  }
+
   class FakeInfoWindow {
     setContent() {}
 
     open() {}
+
+    close() {}
   }
 
   class FakeLatLngBounds {
@@ -139,6 +171,27 @@ function createGoogleMapsStub() {
         InfoWindow: FakeInfoWindow,
         LatLngBounds: FakeLatLngBounds,
         Geocoder: FakeGeocoder,
+        importLibrary: async (name) => {
+          if (name === "core") {
+            return {
+              ColorScheme: {
+                LIGHT: "LIGHT",
+                DARK: "DARK",
+                FOLLOW_SYSTEM: "FOLLOW_SYSTEM"
+              }
+            };
+          }
+          if (name === "marker") {
+            return {
+              AdvancedMarkerElement: FakeAdvancedMarkerElement,
+              PinElement: FakePinElement
+            };
+          }
+          if (name === "places") {
+            return {};
+          }
+          return {};
+        },
         places: {
           Autocomplete: FakeAutocomplete
         }
@@ -155,6 +208,9 @@ function createHarness({ search = "", fetchImpl, bootstrapOverrides = {}, google
 
   const elements = {
     "app-bootstrap": createElement({ id: "app-bootstrap" }),
+    "theme-toggle": createElement({ id: "theme-toggle" }),
+    "theme-icon-sun": createElement({ id: "theme-icon-sun" }),
+    "theme-icon-moon": createElement({ id: "theme-icon-moon" }),
     "use-location": createElement({ id: "use-location" }),
     "use-fallback": createElement({ id: "use-fallback" }),
     "search-input": createElement({ id: "search-input" }),
@@ -206,6 +262,17 @@ function createHarness({ search = "", fetchImpl, bootstrapOverrides = {}, google
   const storage = new Map();
 
   const document = {
+    documentElement: {
+      attributes: {
+        "data-theme": "light"
+      },
+      getAttribute(name) {
+        return this.attributes[name] ?? null;
+      },
+      setAttribute(name, value) {
+        this.attributes[name] = value;
+      }
+    },
     getElementById(id) {
       return elements[id] ?? null;
     },
@@ -561,4 +628,71 @@ test("web app lets the user place a venue pin on the map", async () => {
   assert.match(harness.elements["add-location-location-summary"].textContent, /Pinned venue address/);
   assert.equal(harness.elements["add-location-address"].value, "Pinned venue address");
   assert.equal(harness.elements["add-location-feedback"].textContent.includes("Pin placement is active"), false);
+});
+
+test("web app recreates the Google Map when toggling dark mode", async () => {
+  const googleMapsStub = createGoogleMapsStub();
+  const harness = createHarness({
+    search: "?lat=51.5072&lng=-0.1276&label=Central%20London",
+    google: googleMapsStub.google,
+    bootstrapOverrides: {
+      googleMapsApiKey: "test-key",
+      googleMapsMapId: "LIGHT_MAP_ID"
+    }
+  });
+
+  await flushImmediate();
+
+  assert.equal(googleMapsStub.createdMaps.length, 1);
+  assert.equal(googleMapsStub.createdMaps[0].options.mapId, "LIGHT_MAP_ID");
+  assert.equal(googleMapsStub.createdMaps[0].options.colorScheme, "LIGHT");
+  assert.equal(harness.storage.get("wifinder-theme"), undefined);
+
+  harness.elements["theme-toggle"].dispatch("click");
+  await flushImmediate();
+
+  assert.equal(googleMapsStub.createdMaps.length, 2);
+  assert.equal(googleMapsStub.createdMaps[1].options.mapId, "LIGHT_MAP_ID");
+  assert.equal(googleMapsStub.createdMaps[1].options.colorScheme, "DARK");
+  assert.equal(googleMapsStub.createdMaps[1].options.styles, null);
+  assert.equal(harness.storage.get("wifinder-theme"), "dark");
+});
+
+test("web app skips mapId and advanced markers when no real Google Maps map ID is configured", async () => {
+  const googleMapsStub = createGoogleMapsStub();
+  const harness = createHarness({
+    search: "?lat=51.5072&lng=-0.1276&label=Central%20London",
+    google: googleMapsStub.google,
+    bootstrapOverrides: {
+      googleMapsApiKey: "test-key",
+      googleMapsMapId: "DEMO_MAP_ID"
+    },
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      headers: { get() { return null; } },
+      async json() {
+        return {
+          locations: [
+            {
+              id: 1,
+              name: "Cafe Zero",
+              category: "cafe",
+              lat: 51.508,
+              lng: -0.128,
+              distance_m: 120
+            }
+          ]
+        };
+      }
+    })
+  });
+
+  await flushImmediate();
+
+  assert.equal(googleMapsStub.createdMaps.length, 1);
+  assert.equal(googleMapsStub.createdMaps[0].options.mapId, null);
+  assert.equal(googleMapsStub.createdMaps[0].options.colorScheme, "LIGHT");
+  assert.equal(googleMapsStub.createdMaps[0].options.styles, null);
+  assert.equal(harness.elements["location-list"].innerHTML.includes("Cafe Zero"), true);
 });

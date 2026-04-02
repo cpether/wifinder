@@ -1,6 +1,7 @@
 export const CONFIG = {
   dbPath: process.env.DB_PATH ?? "data/wifinder.sqlite",
   googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY ?? null,
+  googleMapsMapId: process.env.GOOGLE_MAPS_MAP_ID ?? "DEMO_MAP_ID",
   tokenTtlMs: 1000 * 60 * 60 * 24 * 30,
   tokenRotateMs: 1000 * 60 * 60 * 12,
   rateLimits: {

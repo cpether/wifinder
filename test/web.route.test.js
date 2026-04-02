@@ -34,7 +34,8 @@ test("web route renderer serves v3 Stitch-inspired home shell", () => {
   assert.equal(response.served, true);
   assert.equal(response.statusCode, 200);
   assert.equal(response.headers["content-type"], "text/html; charset=utf-8");
-  assert.match(response.body, /WiFi Connect/);
+  assert.match(response.body, /class="layout-stitch-v3 layout-stitch-v3-home"/);
+  assert.match(response.body, /Wi<span class="logo-accent">Finder<\/span>/);
   assert.match(response.body, /Find cafes, bars, or pubs/);
   assert.match(response.body, /Nearby WiFi Spots/);
   assert.match(response.body, /id="map-canvas"/);
@@ -43,6 +44,7 @@ test("web route renderer serves v3 Stitch-inspired home shell", () => {
   assert.doesNotMatch(response.body, /id="add-location-form"/);
   assert.doesNotMatch(response.body, /id="status-banner"/);
   assert.match(response.body, /"autoLocateOnLoad":true/);
+  assert.match(response.body, /"mapGestureHandling":"greedy"/);
 });
 
 test("web route renderer serves dedicated v3 add screen", () => {
