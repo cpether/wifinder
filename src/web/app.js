@@ -107,6 +107,8 @@
   let searchPlacesApi = null;
   let markerApi = null;
   let coreApi = null;
+  let mapCalloutOverlay = null;
+  const mapOverlayHome = elements.mapOverlay?.parentNode ?? null;
   let mapClickListenerAttached = false;
 
   /* ═══════ Theme Toggle ═══════ */
@@ -525,21 +527,7 @@
 
     if (state.locations.length === 0) {
       if (state.placeCandidate) {
-        elements.list.innerHTML = `<article class="location-card location-card--suggestion">
-          <div style="display:grid;gap:0.5rem">
-            <div style="display:flex;align-items:start;justify-content:space-between;gap:0.75rem">
-              <div style="min-width:0">
-                <h3>${escapeHtml(state.placeCandidate.name)}</h3>
-                <div class="location-meta">
-                  <div>${escapeHtml(state.placeCandidate.address || "Place found on the map")}</div>
-                  <div>No WiFi details added yet.</div>
-                </div>
-              </div>
-              <span class="chip">New place</span>
-            </div>
-            <a class="stitch-add-link" href="${escapeHtml(state.placeCandidate.addHref)}">Add WiFi details</a>
-          </div>
-        </article>`;
+        elements.list.innerHTML = buildPlaceCandidateListMarkup(state.placeCandidate);
         return;
       }
 
@@ -572,30 +560,192 @@
       )
       .join("");
 
-    const candidateMarkup = state.placeCandidate
-      ? `<article class="location-card location-card--suggestion">
-          <div style="display:grid;gap:0.5rem">
-            <div style="display:flex;align-items:start;justify-content:space-between;gap:0.75rem">
-              <div style="min-width:0">
-                <h3>${escapeHtml(state.placeCandidate.name)}</h3>
-                <div class="location-meta">
-                  <div>${escapeHtml(state.placeCandidate.address || "Place found on the map")}</div>
-                  <div>No WiFi details added yet.</div>
-                </div>
-              </div>
-              <span class="chip">New place</span>
-            </div>
-            <a class="stitch-add-link" href="${escapeHtml(state.placeCandidate.addHref)}">Add WiFi details</a>
-          </div>
-        </article>`
-      : "";
+    const candidateMarkup = state.placeCandidate ? buildPlaceCandidateListMarkup(state.placeCandidate) : "";
 
     elements.list.innerHTML = `${candidateMarkup}${locationMarkup}`;
   }
 
-  function renderMapMessage(message) {
+  function clamp(value, min, max) {
+    if (max < min) {
+      return min;
+    }
+    return Math.min(Math.max(value, min), max);
+  }
+
+  function normalizeLatLngLiteral(location) {
+    if (!location || typeof location !== "object") {
+      return null;
+    }
+
+    if (typeof location.lat === "number" && Number.isFinite(location.lat) && typeof location.lng === "number" && Number.isFinite(location.lng)) {
+      return {
+        lat: location.lat,
+        lng: location.lng
+      };
+    }
+
+    return toLatLngLiteral(location);
+  }
+
+  function resetMapOverlayPosition() {
+    if (!elements.mapOverlay) {
+      return;
+    }
+
+    elements.mapOverlay.style.left = "";
+    elements.mapOverlay.style.top = "";
+    elements.mapOverlay.style.right = "";
+    elements.mapOverlay.style.bottom = "";
+    elements.mapOverlay.style.transform = "";
+  }
+
+  function restoreMapOverlayHome() {
+    if (!elements.mapOverlay || !mapOverlayHome || typeof mapOverlayHome.appendChild !== "function") {
+      return;
+    }
+
+    if (elements.mapOverlay.parentNode !== mapOverlayHome) {
+      mapOverlayHome.appendChild(elements.mapOverlay);
+    }
+  }
+
+  function drawMapCalloutOverlay(overlayView) {
+    if (!elements.mapOverlay || !overlayView) {
+      return;
+    }
+
+    const normalizedAnchor = normalizeLatLngLiteral(overlayView.anchorLocation);
+    const projection = typeof overlayView.getProjection === "function" ? overlayView.getProjection() : null;
+    if (!normalizedAnchor || !projection || typeof projection.fromLatLngToDivPixel !== "function") {
+      resetMapOverlayPosition();
+      return;
+    }
+
+    const latLng = typeof google.maps?.LatLng === "function"
+      ? new google.maps.LatLng(normalizedAnchor.lat, normalizedAnchor.lng)
+      : normalizedAnchor;
+    const point = projection.fromLatLngToDivPixel(latLng);
+    if (!point || typeof point.x !== "number" || typeof point.y !== "number") {
+      resetMapOverlayPosition();
+      return;
+    }
+
+    const anchorOffset = 20;
+    elements.mapOverlay.style.left = `${point.x}px`;
+    elements.mapOverlay.style.top = `${point.y - anchorOffset}px`;
+    elements.mapOverlay.style.right = "auto";
+    elements.mapOverlay.style.bottom = "auto";
+    elements.mapOverlay.style.transform = "translate(-50%, -100%)";
+  }
+
+  function ensureMapCalloutOverlay() {
+    if (mapCalloutOverlay || !map || !elements.mapOverlay || !google.maps?.OverlayView) {
+      return mapCalloutOverlay;
+    }
+
+    const overlayView = new google.maps.OverlayView();
+    overlayView.anchorLocation = null;
+    overlayView.isAttached = false;
+    overlayView.onAdd = function () {
+      const panes = typeof this.getPanes === "function" ? this.getPanes() : null;
+      const pane = panes?.floatPane || panes?.overlayMouseTarget || panes?.overlayLayer;
+      if (!pane || typeof pane.appendChild !== "function") {
+        return;
+      }
+
+      pane.appendChild(elements.mapOverlay);
+      this.isAttached = true;
+    };
+    overlayView.draw = function () {
+      drawMapCalloutOverlay(this);
+    };
+    overlayView.onRemove = function () {
+      this.isAttached = false;
+      resetMapOverlayPosition();
+      restoreMapOverlayHome();
+    };
+
+    mapCalloutOverlay = overlayView;
+    return mapCalloutOverlay;
+  }
+
+  function showMapCalloutOverlay(markup, anchorLocation) {
+    if (!elements.mapOverlay) {
+      return;
+    }
+
+    const normalizedAnchor = normalizeLatLngLiteral(anchorLocation);
     elements.mapOverlay.hidden = false;
+    elements.mapOverlay.innerHTML = markup;
+
+    const overlayView = ensureMapCalloutOverlay();
+    if (!overlayView || !normalizedAnchor) {
+      resetMapOverlayPosition();
+      return;
+    }
+
+    overlayView.anchorLocation = normalizedAnchor;
+
+    if (!overlayView.isAttached && typeof overlayView.setMap === "function") {
+      overlayView.setMap(map);
+      return;
+    }
+
+    if (typeof overlayView.draw === "function") {
+      overlayView.draw();
+    }
+  }
+
+  function renderMapMessage(message) {
+    hideMapOverlay();
+    elements.mapOverlay.hidden = false;
+    elements.mapOverlay.innerHTML = "";
     elements.mapOverlay.textContent = message;
+    resetMapOverlayPosition();
+  }
+
+  function renderMapCallout(place, existingLocation, anchorLocation) {
+    if (!elements.mapOverlay) {
+      return;
+    }
+
+    const actionMarkup = existingLocation
+      ? `<div class="location-meta"><div>WiFi details are already listed in the results below.</div></div>`
+      : `<a class="btn btn-primary btn-sm" href="${escapeHtml(buildAddLocationHref(place))}">Add WiFi details</a>`;
+
+    showMapCalloutOverlay(
+      `<div style="display:grid;gap:0.5rem">
+        <div>
+          <strong>${escapeHtml(place.name || "Selected map location")}</strong><br>
+          <span>${escapeHtml(place.address || "Pinned point on the map")}</span>
+        </div>
+        ${actionMarkup}
+      </div>`,
+      anchorLocation ?? place
+    );
+  }
+
+  function hideMapOverlay() {
+    if (!elements.mapOverlay) {
+      return;
+    }
+
+    if (mapCalloutOverlay && typeof mapCalloutOverlay.setMap === "function") {
+      mapCalloutOverlay.setMap(null);
+    }
+    mapCalloutOverlay = null;
+    elements.mapOverlay.hidden = true;
+    elements.mapOverlay.innerHTML = "";
+    elements.mapOverlay.textContent = "";
+    resetMapOverlayPosition();
+    restoreMapOverlayHome();
+  }
+
+  function closeInfoWindow() {
+    hideMapOverlay();
+    if (infoWindow && typeof infoWindow.close === "function") {
+      infoWindow.close();
+    }
   }
 
   function clearMarker(marker) {
@@ -646,6 +796,7 @@
     return {
       center: state.center || config.fallbackCenter,
       zoom: 13,
+      clickableIcons: true,
       disableDefaultUI: true,
       zoomControl: true,
       fullscreenControl: false,
@@ -677,6 +828,10 @@
       infoWindow.close();
     }
     infoWindow = null;
+    if (mapCalloutOverlay && typeof mapCalloutOverlay.setMap === "function") {
+      mapCalloutOverlay.setMap(null);
+    }
+    mapCalloutOverlay = null;
 
     map = new google.maps.Map(elements.mapCanvas, getMapOptions({ center, zoom }));
     mapClickListenerAttached = false;
@@ -723,6 +878,23 @@
     });
   }
 
+  function renderExistingLocationCallout(location) {
+    if (!location) {
+      return;
+    }
+
+    renderMapCallout(
+      {
+        name: location.name,
+        address: location.address || `${location.category} · ${formatDistance(location.distance_m)}`,
+        lat: location.lat,
+        lng: location.lng
+      },
+      location,
+      { lat: location.lat, lng: location.lng }
+    );
+  }
+
   function updateMapMarkers() {
     if (!map) {
       return;
@@ -755,24 +927,35 @@
         location.name,
         "result"
       );
-      const openInfoWindow = () => {
-        infoWindow =
-          infoWindow ??
-          new google.maps.InfoWindow({
-            maxWidth: 260
-          });
-        infoWindow.setContent(
-          `<strong>${escapeHtml(location.name)}</strong><br>${escapeHtml(location.category)}<br>${escapeHtml(formatDistance(location.distance_m))}`
-        );
-        infoWindow.open({ anchor: marker, map });
+      const openLocationCallout = () => {
+        renderExistingLocationCallout(location);
       };
       if (typeof marker.addEventListener === "function") {
-        marker.addEventListener("gmp-click", openInfoWindow);
+        marker.addEventListener("gmp-click", openLocationCallout);
       } else if (typeof marker.addListener === "function") {
-        marker.addListener("click", openInfoWindow);
+        marker.addListener("click", openLocationCallout);
       }
       markers.push(marker);
     }
+  }
+
+  function centerMapOnLocation(location) {
+    if (!map || !location) {
+      return;
+    }
+
+    if (typeof map.panTo === "function") {
+      map.panTo(location);
+      return;
+    }
+
+    if (typeof map.setCenter === "function") {
+      map.setCenter(location);
+    }
+  }
+
+  function shouldPinCurrentLocationAtMapCenter() {
+    return Boolean(state.center && state.centerSource === "geolocation" && getRequestMode() === "nearby");
   }
 
   function fitMapBounds() {
@@ -800,12 +983,16 @@
     }
 
     if (state.locations.length === 0 && state.center) {
-      map.setCenter(state.center);
+      centerMapOnLocation(state.center);
       map.setZoom(14);
       return;
     }
 
     map.fitBounds(bounds, 72);
+
+    if (shouldPinCurrentLocationAtMapCenter()) {
+      centerMapOnLocation(state.center);
+    }
   }
 
   function loadGoogleMaps() {
@@ -879,15 +1066,7 @@
         updateMapMarkers();
         fitMapBounds();
 
-        if (state.addLocation.pinPlacementMode) {
-          elements.mapOverlay.hidden = true;
-        } else if (state.locations.length === 0 && !state.center && !hasSearchCriteria()) {
-          elements.mapOverlay.hidden = true;
-        } else if (state.locations.length === 0) {
-          elements.mapOverlay.hidden = true;
-        } else {
-          elements.mapOverlay.hidden = true;
-        }
+        hideMapOverlay();
       })
       .catch((error) => {
         renderMapMessage(error.message);
@@ -936,8 +1115,12 @@
     const params = new URLSearchParams();
     params.set("lat", String(place.lat));
     params.set("lng", String(place.lng));
-    params.set("label", place.address || place.name);
-    params.set("name", place.name);
+    if (place.address || place.name) {
+      params.set("label", place.address || place.name);
+    }
+    if (place.name) {
+      params.set("name", place.name);
+    }
     if (place.address) {
       params.set("address", place.address);
     }
@@ -947,23 +1130,76 @@
     return `/v3/add?${params.toString()}`;
   }
 
+  function findMatchingLocationForPlace(place) {
+    if (!place) {
+      return null;
+    }
+
+    const normalizedPlaceName = normalizeText(place.name);
+    const normalizedPlaceAddress = normalizeText(place.address);
+
+    return (
+      state.locations.find((location) => {
+        const nameMatch = normalizeText(location.name) === normalizedPlaceName;
+        const addressMatch = normalizedPlaceAddress && normalizeText(location.address) === normalizedPlaceAddress;
+        const closeMatch =
+          typeof location.distance_m === "number" &&
+          location.distance_m <= 120 &&
+          normalizeText(location.name).includes(normalizedPlaceName);
+        return nameMatch || addressMatch || closeMatch;
+      }) ?? null
+    );
+  }
+
+  function buildPlaceCandidateListMarkup(place) {
+    return `<article class="location-card location-card--suggestion">
+      <div style="display:grid;gap:0.5rem">
+        <div style="display:flex;align-items:start;justify-content:space-between;gap:0.75rem">
+          <div style="min-width:0">
+            <h3>${escapeHtml(place.name)}</h3>
+            <div class="location-meta">
+              <div>${escapeHtml(place.address || "Place found on the map")}</div>
+              <div>No WiFi details added yet.</div>
+            </div>
+          </div>
+          <span class="chip">New place</span>
+        </div>
+        <a class="stitch-add-link" href="${escapeHtml(place.addHref)}">Add WiFi details</a>
+      </div>
+    </article>`;
+  }
+
+  function toLatLngLiteral(location) {
+    if (!location || typeof location.lat !== "function" || typeof location.lng !== "function") {
+      return null;
+    }
+
+    return {
+      lat: location.lat(),
+      lng: location.lng()
+    };
+  }
+
+  function deriveCandidateName(address) {
+    if (!address) {
+      return "Selected map location";
+    }
+
+    const [firstSegment] = String(address)
+      .split(",")
+      .map((segment) => segment.trim())
+      .filter(Boolean);
+
+    return firstSegment || "Selected map location";
+  }
+
   function updatePlaceCandidate(place) {
     if (!place) {
       state.placeCandidate = null;
       return;
     }
 
-    const normalizedPlaceName = normalizeText(place.name);
-    const normalizedPlaceAddress = normalizeText(place.address);
-    const hasMatch = state.locations.some((location) => {
-      const nameMatch = normalizeText(location.name) === normalizedPlaceName;
-      const addressMatch = normalizedPlaceAddress && normalizeText(location.address) === normalizedPlaceAddress;
-      const closeMatch =
-        typeof location.distance_m === "number" &&
-        location.distance_m <= 120 &&
-        normalizeText(location.name).includes(normalizedPlaceName);
-      return nameMatch || addressMatch || closeMatch;
-    });
+    const hasMatch = Boolean(findMatchingLocationForPlace(place));
 
     state.placeCandidate = hasMatch
       ? null
@@ -1006,17 +1242,130 @@
     });
   }
 
+  function reverseGeocodeLocation(location) {
+    if (!hasMapsSupport()) {
+      return Promise.resolve(null);
+    }
+
+    addLocationGeocoder = addLocationGeocoder ?? new google.maps.Geocoder();
+
+    return new Promise((resolve) => {
+      addLocationGeocoder.geocode({ location }, (results, status) => {
+        if (status !== "OK" || !Array.isArray(results) || results.length === 0) {
+          resolve({
+            name: "Selected map location",
+            address: "",
+            lat: location.lat,
+            lng: location.lng
+          });
+          return;
+        }
+
+        const [firstResult] = results;
+        const address = firstResult.formatted_address || "";
+        resolve({
+          name: deriveCandidateName(address),
+          address,
+          lat: location.lat,
+          lng: location.lng
+        });
+      });
+    });
+  }
+
+  async function findPlaceById(placeId, fallbackLocation) {
+    ensureSearchServices();
+
+    try {
+      const { Place } = await getPlacesSearchApi();
+      if (typeof Place !== "function") {
+        throw new Error("Places library is unavailable.");
+      }
+
+      const place = new Place({
+        id: placeId,
+        requestedLanguage: navigator?.language || undefined
+      });
+
+      await place.fetchFields({
+        fields: ["displayName", "formattedAddress", "location"]
+      });
+
+      const resolvedLocation = toLatLngLiteral(place.location) ?? fallbackLocation ?? null;
+      if (!resolvedLocation) {
+        return null;
+      }
+
+      return {
+        name: place.displayName || "Google Maps place",
+        address: place.formattedAddress || "",
+        lat: resolvedLocation.lat,
+        lng: resolvedLocation.lng
+      };
+    } catch {
+      if (!fallbackLocation) {
+        return null;
+      }
+
+      return reverseGeocodeLocation(fallbackLocation);
+    }
+  }
+
+  function openPlaceInfoWindow(place, position) {
+    if (!place) {
+      return;
+    }
+
+    const existingLocation = findMatchingLocationForPlace(place);
+    renderMapCallout(place, existingLocation, position);
+  }
+
+  function isPlaceClickEvent(event) {
+    return Boolean(event && typeof event === "object" && "placeId" in event && event.placeId);
+  }
+
   function ensureAddLocationMapTools() {
-    if (!hasAddLocationUi || !hasMapsSupport()) {
+    if (!hasMapsSupport()) {
       return;
     }
 
     addLocationGeocoder = addLocationGeocoder ?? new google.maps.Geocoder();
 
     if (!mapClickListenerAttached) {
-      map.addListener("click", (event) => {
+      map.addListener("click", async (event) => {
         if (!state.addLocation.pinPlacementMode) {
+          if (typeof event?.stop === "function") {
+            event.stop();
+          }
+
+          const isPlaceClick = isPlaceClickEvent(event);
+          const clickedLocation = toLatLngLiteral(event?.latLng);
+
+          if (isPlaceClick) {
+            const place = await findPlaceById(event.placeId, clickedLocation);
+            if (!place) {
+              return;
+            }
+
+            updatePlaceCandidate(place);
+            renderList();
+            openPlaceInfoWindow(place, clickedLocation || { lat: place.lat, lng: place.lng });
+            return;
+          }
+
+          if (!clickedLocation) {
+            return;
+          }
+
+          const candidate = await reverseGeocodeLocation(clickedLocation);
+          updatePlaceCandidate(candidate);
+          renderList();
+          openPlaceInfoWindow(candidate, clickedLocation);
           return;
+        }
+
+        if (event?.placeId && typeof event.stop === "function") {
+          event.stop();
         }
 
         const location = {
@@ -1293,6 +1642,7 @@
     state.loading = true;
     state.error = null;
     state.placeCandidate = null;
+    closeInfoWindow();
     state.center = center;
     state.centerLabel = label;
     state.centerSource = centerSource;
