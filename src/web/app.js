@@ -52,7 +52,8 @@
       verifiedOnly: params.get("verified") === "true",
       addLocationName: params.get("name") || "",
       addLocationAddress: params.get("address") || "",
-      addLocationCategory: params.get("newCategory") || ""
+      addLocationCategory: params.get("venueCategory") || params.get("newCategory") || "",
+      addLocationId: params.get("locationId") || ""
     };
   }
 
@@ -69,6 +70,8 @@
     addLocationCategory: document.getElementById("add-location-category"),
     addLocationLocationSummary: document.getElementById("add-location-location-summary"),
     addLocationAddress: document.getElementById("add-location-address"),
+    addLocationSsid: document.getElementById("add-location-ssid"),
+    addLocationPassword: document.getElementById("add-location-password"),
     addLocationUseCurrent: document.getElementById("add-location-use-current"),
     addLocationPlacePin: document.getElementById("add-location-place-pin"),
     addLocationNotes: document.getElementById("add-location-notes"),
@@ -110,6 +113,7 @@
   let mapCalloutOverlay = null;
   const mapOverlayHome = elements.mapOverlay?.parentNode ?? null;
   let mapClickListenerAttached = false;
+  const isDedicatedAddWifiPage = window.location.pathname === "/v3/add";
 
   /* ═══════ Theme Toggle ═══════ */
   const themeToggle = document.getElementById("theme-toggle");
@@ -198,10 +202,18 @@
       selectedLocation: initialState.center,
       selectedLabel: initialState.centerLabel,
       selectedSource: initialState.center ? "browse-center" : null,
-      pinPlacementMode: false
+      pinPlacementMode: false,
+      existingLocationId:
+        Number.isInteger(Number(initialState.addLocationId)) && Number(initialState.addLocationId) > 0
+          ? Number(initialState.addLocationId)
+          : null
     }
   };
   deviceToken = getStoredDeviceToken();
+
+  function hasWifiDetailInputs() {
+    return Boolean(elements.addLocationSsid && elements.addLocationPassword);
+  }
 
   function normalizeSearchQuery() {
     return state.searchQuery.trim();
@@ -258,6 +270,65 @@
       .replaceAll(/[^a-z0-9]+/g, " ")
       .trim()
       .replaceAll(/\s+/g, " ");
+  }
+
+  function inferVenueCategoryFromTypes(types = []) {
+    const normalizedTypes = Array.isArray(types)
+      ? types
+          .map((type) => normalizeText(type).replaceAll(" ", "_"))
+          .filter(Boolean)
+      : [];
+    const typeToCategory = new Map([
+      ["cafe", "cafe"],
+      ["coffee_shop", "cafe"],
+      ["restaurant", "restaurant"],
+      ["bar", "bar"],
+      ["pub", "pub"],
+      ["library", "library"],
+      ["book_store", "bookshop"],
+      ["coworking_space", "coworking"],
+      ["lodging", "hotel"],
+      ["hotel", "hotel"],
+      ["airport", "airport"],
+      ["train_station", "station"],
+      ["subway_station", "station"],
+      ["bus_station", "station"],
+      ["shopping_mall", "shopping centre"],
+      ["bakery", "bakery"]
+    ]);
+
+    for (const type of normalizedTypes) {
+      const category = typeToCategory.get(type);
+      if (category) {
+        return category;
+      }
+    }
+
+    return "";
+  }
+
+  function deriveVenueCategory(place = {}) {
+    const explicitCategory = normalizeText(place.category);
+    if (explicitCategory) {
+      return explicitCategory;
+    }
+
+    const fromTypes = inferVenueCategoryFromTypes(place.types);
+    if (fromTypes) {
+      return fromTypes;
+    }
+
+    const fromDisplayName = normalizeText(place.categoryLabel);
+    if (fromDisplayName) {
+      return fromDisplayName;
+    }
+
+    const fromFilter = normalizeCategory().toLowerCase();
+    if (fromFilter) {
+      return fromFilter;
+    }
+
+    return "venue";
   }
 
   function escapeHtml(value) {
@@ -380,11 +451,31 @@
       params.set("verified", "true");
     }
 
-    if (state.center && state.centerSource !== "geolocation") {
+    const shouldPersistCenter = Boolean(state.center && (isDedicatedAddWifiPage || state.centerSource !== "geolocation"));
+    if (shouldPersistCenter) {
       params.set("lat", String(state.center.lat));
       params.set("lng", String(state.center.lng));
       if (state.centerLabel) {
         params.set("label", state.centerLabel);
+      }
+    }
+
+    if (isDedicatedAddWifiPage) {
+      const venueName = elements.addLocationName?.value.trim();
+      const venueAddress = elements.addLocationAddress?.value.trim();
+      const venueCategory = elements.addLocationCategory?.value.trim();
+
+      if (venueName) {
+        params.set("name", venueName);
+      }
+      if (venueAddress) {
+        params.set("address", venueAddress);
+      }
+      if (venueCategory) {
+        params.set("venueCategory", venueCategory);
+      }
+      if (state.addLocation.existingLocationId) {
+        params.set("locationId", String(state.addLocation.existingLocationId));
       }
     }
 
@@ -709,9 +800,9 @@
       return;
     }
 
-    const actionMarkup = existingLocation
-      ? `<div class="location-meta"><div>WiFi details are already listed in the results below.</div></div>`
-      : `<a class="btn btn-primary btn-sm" href="${escapeHtml(buildAddLocationHref(place))}">Add WiFi details</a>`;
+    const actionMarkup = `<a class="btn btn-primary btn-sm" href="${escapeHtml(
+      buildAddLocationHref(place, existingLocation)
+    )}">Add WiFi details</a>`;
 
     showMapCalloutOverlay(
       `<div style="display:grid;gap:0.5rem">
@@ -1064,7 +1155,14 @@
         ensureAddLocationMapTools();
 
         updateMapMarkers();
-        fitMapBounds();
+        if (isDedicatedAddWifiPage && state.addLocation.selectedLocation) {
+          centerMapOnLocation(state.addLocation.selectedLocation);
+          if (typeof map.setZoom === "function") {
+            map.setZoom(16);
+          }
+        } else {
+          fitMapBounds();
+        }
 
         hideMapOverlay();
       })
@@ -1111,7 +1209,7 @@
     setAddLocationSelection(state.center, state.centerLabel || "your selected area", "browse-center");
   }
 
-  function buildAddLocationHref(place) {
+  function buildAddLocationHref(place, existingLocation = null) {
     const params = new URLSearchParams();
     params.set("lat", String(place.lat));
     params.set("lng", String(place.lng));
@@ -1124,8 +1222,15 @@
     if (place.address) {
       params.set("address", place.address);
     }
-    if (normalizeCategory()) {
-      params.set("newCategory", normalizeCategory());
+    const venueCategory = deriveVenueCategory({
+      ...place,
+      category: existingLocation?.category || place.category
+    });
+    if (venueCategory) {
+      params.set("venueCategory", venueCategory);
+    }
+    if (existingLocation?.id) {
+      params.set("locationId", String(existingLocation.id));
     }
     return `/v3/add?${params.toString()}`;
   }
@@ -1199,14 +1304,47 @@
       return;
     }
 
-    const hasMatch = Boolean(findMatchingLocationForPlace(place));
+    const matchedLocation = findMatchingLocationForPlace(place);
+    const hasMatch = Boolean(matchedLocation);
 
     state.placeCandidate = hasMatch
       ? null
       : {
           ...place,
-          addHref: buildAddLocationHref(place)
+          addHref: buildAddLocationHref(place, matchedLocation)
         };
+  }
+
+  function syncAddLocationExistingMatch() {
+    if (!hasAddLocationUi) {
+      return;
+    }
+
+    if (state.addLocation.existingLocationId) {
+      const existingById = state.locations.find((location) => location.id === state.addLocation.existingLocationId);
+      if (existingById) {
+        if (!elements.addLocationCategory.value.trim()) {
+          elements.addLocationCategory.value = existingById.category;
+        }
+        return;
+      }
+    }
+
+    const matchedLocation = findMatchingLocationForPlace({
+      name: elements.addLocationName?.value,
+      address: elements.addLocationAddress?.value,
+      lat: state.addLocation.selectedLocation?.lat,
+      lng: state.addLocation.selectedLocation?.lng
+    });
+
+    if (!matchedLocation) {
+      return;
+    }
+
+    state.addLocation.existingLocationId = matchedLocation.id;
+    if (!elements.addLocationCategory.value.trim()) {
+      elements.addLocationCategory.value = matchedLocation.category;
+    }
   }
 
   function hasMapsSupport() {
@@ -1255,6 +1393,7 @@
           resolve({
             name: "Selected map location",
             address: "",
+            category: normalizeCategory() || "venue",
             lat: location.lat,
             lng: location.lng
           });
@@ -1266,6 +1405,7 @@
         resolve({
           name: deriveCandidateName(address),
           address,
+          category: normalizeCategory() || "venue",
           lat: location.lat,
           lng: location.lng
         });
@@ -1288,7 +1428,7 @@
       });
 
       await place.fetchFields({
-        fields: ["displayName", "formattedAddress", "location"]
+        fields: ["displayName", "formattedAddress", "location", "types", "primaryType", "primaryTypeDisplayName"]
       });
 
       const resolvedLocation = toLatLngLiteral(place.location) ?? fallbackLocation ?? null;
@@ -1299,6 +1439,11 @@
       return {
         name: place.displayName || "Google Maps place",
         address: place.formattedAddress || "",
+        category: deriveVenueCategory({
+          category: place.primaryType,
+          categoryLabel: place.primaryTypeDisplayName,
+          types: place.types
+        }),
         lat: resolvedLocation.lat,
         lng: resolvedLocation.lng
       };
@@ -1435,6 +1580,7 @@
     }
 
     const addLocationCenter = getAddLocationCenter();
+    const dedicatedWifiFlow = hasWifiDetailInputs();
     const feedbackState = state.addLocation.pinPlacementMode
       ? "pending"
       : state.addLocation.submitting
@@ -1444,33 +1590,61 @@
           : state.addLocation.success
             ? "success"
             : "idle";
-    const feedback = state.addLocation.pinPlacementMode
-      ? "Pin placement is active. Tap the map to set the new venue."
-      : state.addLocation.submitting
-      ? "Checking for duplicates and saving your venue..."
-      : state.addLocation.error ??
-        state.addLocation.success ??
-        "Choose a discovery area first, then add the venue details.";
+    const feedback = dedicatedWifiFlow
+      ? state.addLocation.submitting
+        ? "Saving the venue and WiFi details..."
+        : state.addLocation.error ??
+          state.addLocation.success ??
+          "Add the WiFi name and password for this selected venue."
+      : state.addLocation.pinPlacementMode
+        ? "Pin placement is active. Tap the map to set the new venue."
+        : state.addLocation.submitting
+          ? "Checking for duplicates and saving your venue..."
+          : state.addLocation.error ??
+            state.addLocation.success ??
+            "Choose a discovery area first, then add the venue details.";
 
-    elements.addLocationFeedback.textContent = feedback;
-    elements.addLocationFeedback.setAttribute("data-state", feedbackState);
-    elements.addLocationLocationSummary.textContent = addLocationCenter
-      ? state.addLocation.selectedSource === "address-search"
-        ? `Venue pin set from ${state.addLocation.selectedLabel}.`
-        : state.addLocation.selectedSource === "map-pin"
-          ? `Venue pin placed on the map${state.addLocation.selectedLabel ? ` near ${state.addLocation.selectedLabel}` : ""}.`
-          : `Venue pin will use ${state.addLocation.selectedLabel || "your selected area"}.`
-      : "Pick your location or Central London above before submitting a new venue.";
-    elements.addLocationLocationSummary.setAttribute(
-      "data-state",
-      state.addLocation.pinPlacementMode ? "pending" : addLocationCenter ? "success" : "idle"
-    );
+    if (elements.addLocationFeedback) {
+      elements.addLocationFeedback.textContent = feedback;
+      elements.addLocationFeedback.setAttribute("data-state", feedbackState);
+    }
+    if (elements.addLocationLocationSummary) {
+      elements.addLocationLocationSummary.textContent = addLocationCenter
+        ? dedicatedWifiFlow
+          ? state.addLocation.selectedLabel
+            ? `Map centered on ${state.addLocation.selectedLabel}.`
+            : "Map centered on your selected venue."
+          : state.addLocation.selectedSource === "address-search"
+            ? `Venue pin set from ${state.addLocation.selectedLabel}.`
+            : state.addLocation.selectedSource === "map-pin"
+              ? `Venue pin placed on the map${state.addLocation.selectedLabel ? ` near ${state.addLocation.selectedLabel}` : ""}.`
+              : `Venue pin will use ${state.addLocation.selectedLabel || "your selected area"}.`
+        : dedicatedWifiFlow
+          ? "Return to the map and choose a venue before adding WiFi details."
+          : "Pick your location or Central London above before submitting a new venue.";
+      elements.addLocationLocationSummary.setAttribute(
+        "data-state",
+        state.addLocation.pinPlacementMode ? "pending" : addLocationCenter ? "success" : "idle"
+      );
+    }
     elements.addLocationSubmit.disabled = state.addLocation.submitting;
-    elements.addLocationUseCurrent.disabled = state.addLocation.submitting;
-    elements.addLocationPlacePin.disabled = state.addLocation.submitting;
-    elements.addLocationSubmitAnyway.disabled =
-      state.addLocation.submitting || !state.addLocation.pendingPayload;
-    elements.addLocationCancelWarning.disabled = state.addLocation.submitting;
+    if (elements.addLocationUseCurrent) {
+      elements.addLocationUseCurrent.disabled = state.addLocation.submitting;
+    }
+    if (elements.addLocationPlacePin) {
+      elements.addLocationPlacePin.disabled = state.addLocation.submitting;
+    }
+    if (elements.addLocationSubmitAnyway) {
+      elements.addLocationSubmitAnyway.disabled =
+        state.addLocation.submitting || !state.addLocation.pendingPayload;
+    }
+    if (elements.addLocationCancelWarning) {
+      elements.addLocationCancelWarning.disabled = state.addLocation.submitting;
+    }
+
+    if (!elements.addLocationDuplicateWarning || !elements.addLocationDuplicateSummary || !elements.addLocationDuplicateList) {
+      return;
+    }
 
     const duplicateCount = state.addLocation.duplicates.length;
     elements.addLocationDuplicateWarning.hidden = duplicateCount === 0;
@@ -1501,10 +1675,10 @@
     }
 
     const addLocationCenter = getAddLocationCenter();
-    const name = elements.addLocationName.value.trim();
-    const category = elements.addLocationCategory.value.trim();
-    const address = elements.addLocationAddress.value.trim();
-    const notes = elements.addLocationNotes.value.trim();
+    const name = elements.addLocationName?.value.trim() ?? "";
+    const category = elements.addLocationCategory?.value.trim() ?? "";
+    const address = elements.addLocationAddress?.value.trim() ?? "";
+    const notes = elements.addLocationNotes?.value.trim() ?? "";
 
     if (!name) {
       throw new Error("Enter a venue name before submitting.");
@@ -1526,7 +1700,8 @@
       name,
       category,
       lat: addLocationCenter.lat,
-      lng: addLocationCenter.lng
+      lng: addLocationCenter.lng,
+      place_source: "map_selection"
     };
 
     if (address) {
@@ -1544,7 +1719,42 @@
     return payload;
   }
 
-  function handleSuccessfulLocationCreate(location) {
+  function buildWifiDetailPayload() {
+    if (!hasWifiDetailInputs()) {
+      return null;
+    }
+
+    const ssid = elements.addLocationSsid.value.trim();
+    const password = elements.addLocationPassword.value.trim();
+
+    if (!ssid) {
+      throw new Error("Enter the WiFi name before submitting.");
+    }
+
+    if (!password) {
+      throw new Error("Enter the WiFi password before submitting.");
+    }
+
+    return {
+      ssid,
+      password
+    };
+  }
+
+  function redirectToAddWifiSuccess() {
+    if (!window.location) {
+      return;
+    }
+
+    if (typeof window.location.assign === "function") {
+      window.location.assign("/v3/add/success");
+      return;
+    }
+
+    window.location.href = "/v3/add/success";
+  }
+
+  function handleSuccessfulLocationCreate(location, wifiDetail = null) {
     state.loading = false;
     state.error = null;
     state.searchQuery = "";
@@ -1558,13 +1768,38 @@
       location.address || location.name,
       "browse-center"
     );
-    state.locations = [{ ...location, distance_m: 0 }];
-    state.addLocation.success = `${location.name} is now live and visible below.`;
+    state.addLocation.existingLocationId = location.id;
+    state.locations = [
+      {
+        ...location,
+        distance_m: 0,
+        wifi_details: wifiDetail ? [wifiDetail] : location.wifi_details ?? []
+      }
+    ];
+    state.addLocation.success = wifiDetail
+      ? `WiFi details for ${location.name} are now saved.`
+      : `${location.name} is now live and visible below.`;
+
+    if (isDedicatedAddWifiPage && wifiDetail) {
+      redirectToAddWifiSuccess();
+      return;
+    }
+
     clearDuplicateWarning();
-    elements.addLocationName.value = "";
-    elements.addLocationCategory.value = "";
-    elements.addLocationAddress.value = "";
-    elements.addLocationNotes.value = "";
+    if (elements.addLocationSsid) {
+      elements.addLocationSsid.value = "";
+    }
+    if (elements.addLocationPassword) {
+      elements.addLocationPassword.value = "";
+    }
+    if (!hasWifiDetailInputs()) {
+      elements.addLocationName.value = "";
+      elements.addLocationCategory.value = "";
+      elements.addLocationAddress.value = "";
+      if (elements.addLocationNotes) {
+        elements.addLocationNotes.value = "";
+      }
+    }
     applyStateToControls();
     syncUrl();
     renderStatus();
@@ -1582,6 +1817,7 @@
     }
 
     try {
+      const wifiPayload = buildWifiDetailPayload();
       const payload = ignoreDuplicateWarning && state.addLocation.pendingPayload
         ? { ...state.addLocation.pendingPayload, ignore_duplicate_warning: true }
         : buildAddLocationPayload({ ignoreDuplicateWarning });
@@ -1592,6 +1828,60 @@
         clearDuplicateWarning();
       }
       renderAddLocation();
+
+      if (wifiPayload) {
+        let location = null;
+        let locationId = state.addLocation.existingLocationId;
+
+        if (!locationId) {
+          const { response, payload: responsePayload } = await apiJsonRequest(config.createLocationEndpoint, {
+            method: "POST",
+            body: payload
+          });
+
+          if (response.status === 409 && Array.isArray(responsePayload.error?.details?.duplicates)) {
+            const [firstDuplicate] = responsePayload.error.details.duplicates;
+            if (!firstDuplicate?.id) {
+              throw new Error("This venue already exists nearby. Please return to the map and choose it again.");
+            }
+            locationId = firstDuplicate.id;
+            location = firstDuplicate;
+            state.addLocation.existingLocationId = locationId;
+          } else if (!response.ok) {
+            throw new Error(responsePayload.error?.message || "Venue submission failed.");
+          } else {
+            location = responsePayload.location;
+            locationId = location.id;
+            state.addLocation.existingLocationId = locationId;
+          }
+        }
+
+        const { response: wifiResponse, payload: wifiResponsePayload } = await apiJsonRequest(
+          `/api/locations/${locationId}/wifi-details`,
+          {
+            method: "POST",
+            body: wifiPayload
+          }
+        );
+
+        if (!wifiResponse.ok) {
+          throw new Error(wifiResponsePayload.error?.message || "WiFi submission failed.");
+        }
+
+        const successLocation = location ?? {
+          id: locationId,
+          name: payload.name,
+          category: payload.category,
+          lat: payload.lat,
+          lng: payload.lng,
+          address: payload.address,
+          wifi_confidence: 0,
+          freshness_badge: "Unknown",
+          last_verified_at: null
+        };
+        handleSuccessfulLocationCreate(successLocation, wifiResponsePayload.wifi_detail);
+        return;
+      }
 
       const { response, payload: responsePayload } = await apiJsonRequest(config.createLocationEndpoint, {
         method: "POST",
@@ -1686,6 +1976,8 @@
       }
 
       state.locations = Array.isArray(payload.locations) ? payload.locations : [];
+      syncAddLocationExistingMatch();
+      syncUrl();
     } catch (error) {
       if (requestId !== requestSequence) {
         return;
@@ -1854,7 +2146,7 @@
     const { Place, SearchByTextRankPreference } = await getPlacesSearchApi();
     const request = {
       textQuery: query,
-      fields: ["displayName", "formattedAddress", "location"],
+      fields: ["displayName", "formattedAddress", "location", "types", "primaryType", "primaryTypeDisplayName"],
       rankPreference: SearchByTextRankPreference?.RELEVANCE
     };
 
@@ -1876,6 +2168,11 @@
     return {
       name: place.displayName || query,
       address: place.formattedAddress || "",
+      category: deriveVenueCategory({
+        category: place.primaryType,
+        categoryLabel: place.primaryTypeDisplayName,
+        types: place.types
+      }),
       lat: location.lat(),
       lng: location.lng()
     };
@@ -1950,45 +2247,58 @@
     });
   }
   if (hasAddLocationUi) {
-    elements.addLocationUseCurrent.addEventListener("click", () => {
-      syncAddLocationToBrowseCenter();
-      clearDuplicateWarning();
-      resetAddLocationFeedback();
-      renderAddLocation();
-      syncMap();
-    });
-    elements.addLocationPlacePin.addEventListener("click", () => {
-      if (!config.googleMapsApiKey) {
-        state.addLocation.error = "Set GOOGLE_MAPS_API_KEY to place a venue pin on the map.";
-        state.addLocation.success = null;
+    if (elements.addLocationUseCurrent) {
+      elements.addLocationUseCurrent.addEventListener("click", () => {
+        syncAddLocationToBrowseCenter();
+        clearDuplicateWarning();
+        resetAddLocationFeedback();
         renderAddLocation();
-        return;
-      }
+        syncMap();
+      });
+    }
+    if (elements.addLocationPlacePin) {
+      elements.addLocationPlacePin.addEventListener("click", () => {
+        if (!config.googleMapsApiKey) {
+          state.addLocation.error = "Set GOOGLE_MAPS_API_KEY to place a venue pin on the map.";
+          state.addLocation.success = null;
+          renderAddLocation();
+          return;
+        }
 
-      state.addLocation.pinPlacementMode = true;
-      resetAddLocationFeedback();
-      clearDuplicateWarning();
-      renderAddLocation();
-      setActiveTab("map");
-      syncMap();
-    });
+        state.addLocation.pinPlacementMode = true;
+        resetAddLocationFeedback();
+        clearDuplicateWarning();
+        renderAddLocation();
+        setActiveTab("map");
+        syncMap();
+      });
+    }
     elements.addLocationForm.addEventListener("submit", (event) => {
       event.preventDefault();
       submitAddLocation();
     });
-    elements.addLocationSubmitAnyway.addEventListener("click", () => submitAddLocation({ ignoreDuplicateWarning: true }));
-    elements.addLocationCancelWarning.addEventListener("click", () => {
-      clearDuplicateWarning();
-      resetAddLocationFeedback();
-      renderAddLocation();
-    });
+    if (elements.addLocationSubmitAnyway) {
+      elements.addLocationSubmitAnyway.addEventListener("click", () => submitAddLocation({ ignoreDuplicateWarning: true }));
+    }
+    if (elements.addLocationCancelWarning) {
+      elements.addLocationCancelWarning.addEventListener("click", () => {
+        clearDuplicateWarning();
+        resetAddLocationFeedback();
+        renderAddLocation();
+      });
+    }
 
     for (const field of [
       elements.addLocationName,
       elements.addLocationCategory,
       elements.addLocationAddress,
-      elements.addLocationNotes
+      elements.addLocationNotes,
+      elements.addLocationSsid,
+      elements.addLocationPassword
     ]) {
+      if (!field) {
+        continue;
+      }
       field.addEventListener("input", () => {
         clearDuplicateWarning();
         resetAddLocationFeedback();
@@ -2003,11 +2313,18 @@
 
   applyStateToControls();
   if (hasAddLocationUi) {
-    elements.addLocationName.value = initialState.addLocationName;
-    elements.addLocationAddress.value = initialState.addLocationAddress;
-    elements.addLocationCategory.value = initialState.addLocationCategory;
+    if (elements.addLocationName) {
+      elements.addLocationName.value = initialState.addLocationName;
+    }
+    if (elements.addLocationAddress) {
+      elements.addLocationAddress.value = initialState.addLocationAddress;
+    }
+    if (elements.addLocationCategory) {
+      elements.addLocationCategory.value = initialState.addLocationCategory;
+    }
   }
   syncAddLocationToBrowseCenter();
+  syncAddLocationExistingMatch();
   renderAddLocation();
 
   if (config.autoLocateOnLoad && !state.center && !hasSearchCriteria()) {

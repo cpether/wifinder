@@ -410,11 +410,13 @@ function createGoogleMapsStub({
 
 function createHarness({
   search = "",
+  pathname = "/",
   fetchImpl,
   bootstrapOverrides = {},
   google = undefined,
   navigatorOverride = {},
-  includeAddLocationUi = true
+  includeAddLocationUi = true,
+  includeWifiDetailAddUi = false
 } = {}) {
   const tabList = createElement({ id: "tab-list", dataset: { tab: "list" } });
   const tabMap = createElement({ id: "tab-map", dataset: { tab: "map" } });
@@ -435,6 +437,8 @@ function createHarness({
     "add-location-category": createElement({ id: "add-location-category" }),
     "add-location-location-summary": createElement({ id: "add-location-location-summary" }),
     "add-location-address": createElement({ id: "add-location-address" }),
+    "add-location-ssid": createElement({ id: "add-location-ssid" }),
+    "add-location-password": createElement({ id: "add-location-password" }),
     "add-location-use-current": createElement({ id: "add-location-use-current" }),
     "add-location-place-pin": createElement({ id: "add-location-place-pin" }),
     "add-location-notes": createElement({ id: "add-location-notes" }),
@@ -466,6 +470,8 @@ function createHarness({
       "add-location-category",
       "add-location-location-summary",
       "add-location-address",
+      "add-location-ssid",
+      "add-location-password",
       "add-location-use-current",
       "add-location-place-pin",
       "add-location-notes",
@@ -479,6 +485,9 @@ function createHarness({
     ]) {
       delete elements[id];
     }
+  } else if (!includeWifiDetailAddUi) {
+    delete elements["add-location-ssid"];
+    delete elements["add-location-password"];
   }
 
   elements["map-canvas"].clientWidth = 360;
@@ -505,6 +514,7 @@ function createHarness({
   const fetchCalls = [];
   const historyCalls = [];
   const storage = new Map();
+  let assignedLocation = null;
 
   const document = {
     documentElement: {
@@ -537,8 +547,13 @@ function createHarness({
 
   const window = {
     location: {
-      pathname: "/",
-      search
+      pathname,
+      search,
+      href: `${pathname}${search}`,
+      assign(url) {
+        assignedLocation = url;
+        this.href = url;
+      }
     },
     history: {
       replaceState(_state, _title, url) {
@@ -600,7 +615,10 @@ function createHarness({
     elements,
     fetchCalls,
     historyCalls,
-    storage
+    storage,
+    get assignedLocation() {
+      return assignedLocation;
+    }
   };
 }
 
@@ -929,6 +947,206 @@ test("web app lets the user place a venue pin on the map", async () => {
   assert.equal(harness.elements["add-location-feedback"].textContent.includes("Pin placement is active"), false);
 });
 
+test("dedicated add wifi page preloads the selected venue and submits location plus wifi details", async () => {
+  let requestCount = 0;
+  const harness = createHarness({
+    pathname: "/v3/add",
+    search:
+      "?lat=51.5033&lng=-0.1195&label=10%20Example%20Street%2C%20London&name=Map%20Click%20Cafe&address=10%20Example%20Street%2C%20London&venueCategory=cafe",
+    includeWifiDetailAddUi: true,
+    fetchImpl: async (url, options) => {
+      requestCount += 1;
+
+      if (requestCount === 1) {
+        assert.match(String(url), /\/api\/locations\/nearby\?/);
+        return {
+          ok: true,
+          status: 200,
+          headers: { get() { return null; } },
+          async json() {
+            return { locations: [] };
+          }
+        };
+      }
+
+      if (requestCount === 2) {
+        return {
+          ok: true,
+          status: 201,
+          headers: {
+            get(name) {
+              return name === "x-device-token" ? "device-token-add" : null;
+            }
+          },
+          async json() {
+            return {
+              location: {
+                id: 22,
+                name: "Map Click Cafe",
+                category: "cafe",
+                lat: 51.5033,
+                lng: -0.1195,
+                address: "10 Example Street, London",
+                wifi_confidence: 0,
+                freshness_badge: "Unknown",
+                last_verified_at: null
+              }
+            };
+          }
+        };
+      }
+
+      return {
+        ok: true,
+        status: 201,
+        headers: {
+          get(name) {
+            return name === "x-device-token" ? "device-token-add" : null;
+          }
+        },
+        async json() {
+          return {
+            wifi_detail: {
+              id: 45,
+              location_id: 22,
+              ssid: "MapGuest",
+              password: "daily-pass",
+              access_notes: null,
+              time_limits: null,
+              purchase_required: false,
+              created_at: "2026-04-03T12:00:00.000Z",
+              status: "active"
+            }
+          };
+        }
+      };
+    }
+  });
+
+  assert.equal(harness.elements["add-location-name"].value, "Map Click Cafe");
+  assert.equal(harness.elements["add-location-category"].value, "cafe");
+  assert.match(harness.elements["add-location-location-summary"].textContent, /10 Example Street, London/);
+
+  harness.elements["add-location-ssid"].value = "MapGuest";
+  harness.elements["add-location-password"].value = "daily-pass";
+  harness.elements["add-location-form"].dispatch("submit");
+  await flushImmediate();
+
+  assert.equal(harness.fetchCalls.length, 3);
+  assert.equal(harness.fetchCalls[1].url, "/api/locations");
+  assert.equal(harness.fetchCalls[2].url, "/api/locations/22/wifi-details");
+
+  const createLocationBody = JSON.parse(harness.fetchCalls[1].options.body);
+  assert.equal(createLocationBody.name, "Map Click Cafe");
+  assert.equal(createLocationBody.category, "cafe");
+  assert.equal(createLocationBody.address, "10 Example Street, London");
+  assert.equal(createLocationBody.lat, 51.5033);
+  assert.equal(createLocationBody.lng, -0.1195);
+
+  const createWifiBody = JSON.parse(harness.fetchCalls[2].options.body);
+  assert.equal(createWifiBody.ssid, "MapGuest");
+  assert.equal(createWifiBody.password, "daily-pass");
+  assert.equal(harness.fetchCalls[2].options.headers["x-device-token"], "device-token-add");
+  assert.equal(harness.assignedLocation, "/v3/add/success");
+});
+
+test("dedicated add wifi page reuses an existing location id when provided", async () => {
+  const harness = createHarness({
+    pathname: "/v3/add",
+    search:
+      "?lat=51.5033&lng=-0.1195&label=10%20Example%20Street%2C%20London&name=Map%20Click%20Cafe&address=10%20Example%20Street%2C%20London&venueCategory=cafe&locationId=22",
+    includeWifiDetailAddUi: true,
+    fetchImpl: async (_url, options) => ({
+      ok: true,
+      status: 201,
+      headers: { get() { return null; } },
+      async json() {
+        if (options?.method === "POST") {
+          return {
+            wifi_detail: {
+              id: 46,
+              location_id: 22,
+              ssid: "SecondGuest",
+              password: "code-123",
+              access_notes: null,
+              time_limits: null,
+              purchase_required: false,
+              created_at: "2026-04-03T12:05:00.000Z",
+              status: "active"
+            }
+          };
+        }
+        return {
+          locations: [
+            {
+              id: 22,
+              name: "Map Click Cafe",
+              category: "cafe",
+              lat: 51.5033,
+              lng: -0.1195,
+              address: "10 Example Street, London",
+              distance_m: 0
+            }
+          ]
+        };
+      }
+    })
+  });
+
+  harness.elements["add-location-ssid"].value = "SecondGuest";
+  harness.elements["add-location-password"].value = "code-123";
+  harness.elements["add-location-form"].dispatch("submit");
+  await flushImmediate();
+
+  assert.equal(harness.fetchCalls.length, 2);
+  assert.equal(harness.fetchCalls[1].url, "/api/locations/22/wifi-details");
+  const createWifiBody = JSON.parse(harness.fetchCalls[1].options.body);
+  assert.equal(createWifiBody.ssid, "SecondGuest");
+  assert.equal(createWifiBody.password, "code-123");
+  assert.equal(harness.assignedLocation, "/v3/add/success");
+});
+
+test("dedicated add wifi page keeps the map centered on the selected venue after nearby results load", async () => {
+  const googleMapsStub = createGoogleMapsStub();
+  const harness = createHarness({
+    pathname: "/v3/add",
+    search:
+      "?lat=51.5033&lng=-0.1195&label=10%20Example%20Street%2C%20London&name=Map%20Click%20Cafe&address=10%20Example%20Street%2C%20London&venueCategory=cafe",
+    includeWifiDetailAddUi: true,
+    google: googleMapsStub.google,
+    bootstrapOverrides: {
+      googleMapsApiKey: "test-key"
+    },
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      headers: { get() { return null; } },
+      async json() {
+        return {
+          locations: [
+            {
+              id: 31,
+              name: "Nearby Cafe",
+              category: "cafe",
+              lat: 51.508,
+              lng: -0.128,
+              address: "Nearby Street, London",
+              distance_m: 800
+            }
+          ]
+        };
+      }
+    })
+  });
+
+  await flushImmediate();
+
+  assert.equal(googleMapsStub.createdMaps.length, 1);
+  assert.equal(googleMapsStub.createdMaps[0].center.lat, 51.5033);
+  assert.equal(googleMapsStub.createdMaps[0].center.lng, -0.1195);
+  assert.equal(googleMapsStub.createdMaps[0].zoom, 16);
+});
+
 test("web app opens a custom add wifi popup when the user clicks the map", async () => {
   const googleMapsStub = createGoogleMapsStub();
   const harness = createHarness({
@@ -1058,7 +1276,8 @@ test("web app uses the custom overlay when clicking an existing result marker", 
   assert.equal(googleMapsStub.createdInfoWindows.length, 0);
   assert.equal(harness.elements["map-overlay"].hidden, false);
   assert.match(harness.elements["map-overlay"].innerHTML, /Cafe Zero/);
-  assert.match(harness.elements["map-overlay"].innerHTML, /WiFi details are already listed in the results below/);
+  assert.match(harness.elements["map-overlay"].innerHTML, /Add WiFi details/);
+  assert.match(harness.elements["map-overlay"].innerHTML, /locationId=1/);
   assert.equal(harness.elements["map-overlay"].style.bottom, "auto");
   assert.equal(harness.elements["map-overlay"].style.transform, "translate(-50%, -100%)");
   assert.match(harness.elements["map-overlay"].style.left, /px$/);

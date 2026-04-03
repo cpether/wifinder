@@ -584,58 +584,37 @@ function renderStitchV3AddHtml(config) {
       <main class="stitch-main stitch-main--add">
         <section class="stitch-add-hero">
           <div>
-            <p class="stitch-section-label">Add WiFi</p>
-            <h1 class="stitch-add-title">Share a new spot</h1>
-            <p class="stitch-add-copy">Pin the venue on the map, then publish it to the community feed.</p>
+            <h1 class="stitch-add-title">Add network details</h1>
           </div>
           <div class="stitch-add-mapwrap">
             <section class="stitch-map-stage stitch-map-stage--compact is-active" id="panel-map" aria-label="Map of nearby Wi-Fi venues">
               <div class="stitch-map-backdrop" aria-hidden="true"></div>
               <div class="map-canvas stitch-map-canvas" id="map-canvas"></div>
-              <div class="map-overlay stitch-map-overlay" id="map-overlay">Use current area or place a pin on the map to position the new venue.</div>
+              <div class="map-overlay stitch-map-overlay" id="map-overlay" hidden></div>
             </section>
           </div>
         </section>
 
-        <section class="stitch-add-sheet stitch-add-sheet--standalone" aria-labelledby="add-location-heading">
-          <div class="stitch-add-header">
-            <div>
-              <p class="stitch-section-label">Submission</p>
-              <h2 id="add-location-heading">Venue details</h2>
-            </div>
-          </div>
+        <section class="stitch-add-sheet stitch-add-sheet--standalone" aria-label="Add WiFi details form">
           <form class="stitch-add-form" id="add-location-form">
             <label class="stitch-field" for="add-location-name">
               <span>Venue name</span>
-              <input id="add-location-name" class="stitch-input" name="name" autocomplete="off" maxlength="120" placeholder="Artisan Roast House" required>
+              <input id="add-location-name" class="stitch-input" name="name" autocomplete="off" maxlength="120" readonly>
             </label>
             <label class="stitch-field" for="add-location-category">
               <span>Category</span>
-              <input id="add-location-category" class="stitch-input" name="category" autocomplete="off" maxlength="60" placeholder="cafe, bar, pub, coworking" required>
+              <input id="add-location-category" class="stitch-input" name="category" autocomplete="off" maxlength="60" readonly>
             </label>
-            <div class="form-feedback stitch-feedback" id="add-location-location-summary" aria-live="polite"></div>
-            <label class="stitch-field" for="add-location-address">
-              <span>Address or postcode</span>
-              <input id="add-location-address" class="stitch-input" name="address" autocomplete="street-address" maxlength="220" placeholder="Search or type an address">
+            <input id="add-location-address" name="address" type="hidden">
+            <label class="stitch-field" for="add-location-ssid">
+              <span>WiFi name</span>
+              <input id="add-location-ssid" class="stitch-input" name="ssid" type="text" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" data-bwignore="true" data-lpignore="true" data-1p-ignore="true" maxlength="120" required>
             </label>
-            <div class="stitch-add-actions">
-              <button class="stitch-secondary-button" id="add-location-use-current" type="button">Use current area</button>
-              <button class="stitch-secondary-button" id="add-location-place-pin" type="button">Place pin on map</button>
-            </div>
-            <label class="stitch-field" for="add-location-notes">
-              <span>Notes</span>
-              <textarea id="add-location-notes" class="stitch-input stitch-textarea" name="notes" maxlength="500" placeholder="Fast password, quiet seating, easy plugs."></textarea>
+            <label class="stitch-field" for="add-location-password">
+              <span>Password</span>
+              <input id="add-location-password" class="stitch-input" name="password" type="password" autocomplete="new-password" autocapitalize="none" autocorrect="off" spellcheck="false" data-bwignore="true" data-lpignore="true" data-1p-ignore="true" maxlength="200" required>
             </label>
-            <div class="form-feedback stitch-feedback" id="add-location-feedback" aria-live="polite"></div>
-            <section class="duplicate-warning stitch-duplicate" id="add-location-duplicate-warning" hidden aria-live="polite">
-              <p class="duplicate-warning-title" id="add-location-duplicate-summary"></p>
-              <div class="duplicate-warning-list" id="add-location-duplicate-list"></div>
-              <div class="duplicate-warning-actions">
-                <button class="stitch-primary-button" id="add-location-submit-anyway" type="button">Submit anyway</button>
-                <button class="stitch-secondary-button" id="add-location-cancel-warning" type="button">Edit details</button>
-              </div>
-            </section>
-            <button class="stitch-primary-button stitch-primary-button--full" id="add-location-submit" type="submit">Publish spot</button>
+            <button class="stitch-primary-button stitch-primary-button--full" id="add-location-submit" type="submit">Add WiFi</button>
           </form>
         </section>
 
@@ -676,6 +655,43 @@ function renderStitchV3AddHtml(config) {
 </html>`;
 }
 
+function renderStitchV3AddSuccessHtml() {
+  return `<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>${escapeHtml("WiFinder Success")}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;700;800&family=Inter:wght@400;500;600;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/assets/app.css">
+  </head>
+  <body class="layout-stitch-v3">
+    <div class="stitch-shell">
+      <nav class="stitch-topbar">
+        <div class="stitch-brand">
+          <div class="logo-circle"><div class="logo-dot"></div></div>
+          <span class="logo-text">Wi<span class="logo-accent">Finder</span></span>
+        </div>
+      </nav>
+
+      <main class="stitch-main stitch-main--add">
+        <section class="stitch-add-sheet stitch-add-sheet--standalone" aria-label="Success message">
+          <div class="stitch-add-hero" style="padding:0">
+            <h1 class="stitch-add-title">WiFi added successfully</h1>
+          </div>
+          <p class="stitch-add-copy">Your network details have been saved and are now ready for the community.</p>
+          <div class="stitch-add-actions" style="margin-top:1rem">
+            <a class="stitch-primary-button stitch-primary-button--full" href="/v3">Back to map</a>
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>`;
+}
+
 export function tryServeWebRoute({ pathname, res, config, responseHeaders }) {
   if (pathname === "/") {
     send(res, 200, renderClassicAppHtml(config), "text/html; charset=utf-8", responseHeaders);
@@ -694,6 +710,11 @@ export function tryServeWebRoute({ pathname, res, config, responseHeaders }) {
 
   if (pathname === "/v3/add") {
     send(res, 200, renderStitchV3AddHtml(config), "text/html; charset=utf-8", responseHeaders);
+    return true;
+  }
+
+  if (pathname === "/v3/add/success") {
+    send(res, 200, renderStitchV3AddSuccessHtml(), "text/html; charset=utf-8", responseHeaders);
     return true;
   }
 

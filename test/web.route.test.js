@@ -37,7 +37,7 @@ test("web route renderer serves v3 Stitch-inspired home shell", () => {
   assert.match(response.body, /class="layout-stitch-v3 layout-stitch-v3-home"/);
   assert.match(response.body, /Wi<span class="logo-accent">Finder<\/span>/);
   assert.match(response.body, /Find cafes, bars, or pubs/);
-  assert.match(response.body, /Nearby WiFi Spots/);
+  assert.match(response.body, /results near you/);
   assert.match(response.body, /id="map-canvas"/);
   assert.match(response.body, /id="search-input"/);
   assert.match(response.body, /data-category-chip="cafe"/);
@@ -53,9 +53,24 @@ test("web route renderer serves dedicated v3 add screen", () => {
   assert.equal(response.served, true);
   assert.equal(response.statusCode, 200);
   assert.equal(response.headers["content-type"], "text/html; charset=utf-8");
-  assert.match(response.body, /Share a new spot/);
+  assert.match(response.body, /Add network details/);
   assert.match(response.body, /id="add-location-form"/);
-  assert.match(response.body, /id="add-location-place-pin"/);
+  assert.match(response.body, /id="add-location-ssid"/);
+  assert.match(response.body, /id="add-location-password"/);
+  assert.match(response.body, /data-bwignore="true"/);
+  assert.match(response.body, /data-1p-ignore="true"/);
+  assert.match(response.body, /type="password"/);
+  assert.match(response.body, /readonly/);
   assert.match(response.body, /id="map-canvas"/);
   assert.match(response.body, /"autoLocateOnLoad":true/);
+});
+
+test("web route renderer serves dedicated v3 add success screen", () => {
+  const response = renderPath("/v3/add/success");
+
+  assert.equal(response.served, true);
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.headers["content-type"], "text/html; charset=utf-8");
+  assert.match(response.body, /WiFi added successfully/);
+  assert.match(response.body, /Back to map/);
 });

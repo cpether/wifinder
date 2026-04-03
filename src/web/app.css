@@ -1581,25 +1581,18 @@ html[data-theme="dark"] .layout-stitch-v3 .stitch-map-stage {
   letter-spacing: -0.05em;
 }
 
-.stitch-add-copy {
-  margin: 0.7rem 0 0;
-  max-width: 34rem;
-  color: var(--stitch-text-muted);
-  font: 500 0.95rem/1.55 var(--stitch-font-body);
-}
-
 .stitch-add-mapwrap {
-  margin-top: 1rem;
+  margin-top: 0.75rem;
 }
 
 .stitch-map-stage--compact {
-  min-height: 22rem;
+  min-height: 17rem;
   border-radius: 1.5rem;
   overflow: hidden;
 }
 
 .stitch-add-sheet--standalone {
-  margin-top: 1rem;
+  margin-top: 0.75rem;
   margin-bottom: 6.75rem;
 }
 
@@ -1641,6 +1634,11 @@ html[data-theme="dark"] .layout-stitch-v3 .stitch-map-stage {
   padding: 0.95rem 1rem;
   font: 500 0.95rem/1.3 var(--stitch-font-body);
   outline: none;
+}
+
+.stitch-input[readonly] {
+  color: var(--stitch-text-muted);
+  background: color-mix(in srgb, var(--stitch-surface-soft) 78%, var(--stitch-surface) 22%);
 }
 
 .stitch-textarea {
