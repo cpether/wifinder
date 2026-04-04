@@ -536,7 +536,7 @@ function renderStitchV3AppHtml(config) {
           <span class="material-symbols-outlined" aria-hidden="true">add_circle</span>
           <span>Add WiFi</span>
         </a>
-        <a class="stitch-bottom-link" href="#stitch-results-heading">
+        <a class="stitch-bottom-link" href="/v3/profile">
           <span class="material-symbols-outlined" aria-hidden="true">person</span>
           <span>Profile</span>
         </a>
@@ -642,7 +642,7 @@ function renderStitchV3AddHtml(config) {
           <span class="material-symbols-outlined" aria-hidden="true">add_circle</span>
           <span>Add WiFi</span>
         </a>
-        <a class="stitch-bottom-link" href="/v3">
+        <a class="stitch-bottom-link" href="/v3/profile">
           <span class="material-symbols-outlined" aria-hidden="true">person</span>
           <span>Profile</span>
         </a>
@@ -692,6 +692,55 @@ function renderStitchV3AddSuccessHtml() {
 </html>`;
 }
 
+function renderStitchV3ProfileHtml() {
+  return `<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>${escapeHtml("WiFinder Profile")}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;700;800&family=Inter:wght@400;500;600;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/assets/app.css">
+  </head>
+  <body class="layout-stitch-v3">
+    <div class="stitch-shell">
+      <nav class="stitch-topbar">
+        <div class="stitch-brand">
+          <div class="logo-circle"><div class="logo-dot"></div></div>
+          <span class="logo-text">Wi<span class="logo-accent">Finder</span></span>
+        </div>
+      </nav>
+
+      <main class="stitch-main stitch-main--add">
+        <section class="stitch-add-sheet stitch-add-sheet--standalone" aria-label="Guest profile placeholder">
+          <div class="stitch-add-hero" style="padding:0">
+            <h1 class="stitch-add-title">Profile</h1>
+          </div>
+          <p class="stitch-add-copy">You're a guest user.</p>
+        </section>
+      </main>
+
+      <nav class="stitch-bottom-nav">
+        <a class="stitch-bottom-link" href="/v3">
+          <span class="material-symbols-outlined" aria-hidden="true">map</span>
+          <span>Explore</span>
+        </a>
+        <a class="stitch-bottom-link" href="/v3/add">
+          <span class="material-symbols-outlined" aria-hidden="true">add_circle</span>
+          <span>Add WiFi</span>
+        </a>
+        <a class="stitch-bottom-link stitch-bottom-link--active" href="/v3/profile">
+          <span class="material-symbols-outlined" aria-hidden="true">person</span>
+          <span>Profile</span>
+        </a>
+      </nav>
+    </div>
+  </body>
+</html>`;
+}
+
 export function tryServeWebRoute({ pathname, res, config, responseHeaders }) {
   if (pathname === "/") {
     send(res, 200, renderClassicAppHtml(config), "text/html; charset=utf-8", responseHeaders);
@@ -715,6 +764,11 @@ export function tryServeWebRoute({ pathname, res, config, responseHeaders }) {
 
   if (pathname === "/v3/add/success") {
     send(res, 200, renderStitchV3AddSuccessHtml(), "text/html; charset=utf-8", responseHeaders);
+    return true;
+  }
+
+  if (pathname === "/v3/profile") {
+    send(res, 200, renderStitchV3ProfileHtml(), "text/html; charset=utf-8", responseHeaders);
     return true;
   }
 

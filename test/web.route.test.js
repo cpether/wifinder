@@ -74,3 +74,14 @@ test("web route renderer serves dedicated v3 add success screen", () => {
   assert.match(response.body, /WiFi added successfully/);
   assert.match(response.body, /Back to map/);
 });
+
+test("web route renderer serves guest profile placeholder screen", () => {
+  const response = renderPath("/v3/profile");
+
+  assert.equal(response.served, true);
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.headers["content-type"], "text/html; charset=utf-8");
+  assert.match(response.body, /<h1 class="stitch-add-title">Profile<\/h1>/);
+  assert.match(response.body, /You&#39;re a guest user\.|You're a guest user\./);
+  assert.match(response.body, /stitch-bottom-link stitch-bottom-link--active" href="\/v3\/profile"/);
+});
